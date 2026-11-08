@@ -60,3 +60,36 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Implemented `/v1/messages?limit=N` returning structured `ChatMessage` objects in reverse chronological order.
 - **Web App Chat & Controls:**
   - Expanded web client at `/app` to include an interactive prompt textarea, Send button, Stop button, and live message history stream.
+
+## 2026-11-09: Phase 5 Mobile Application (Expo Go & Web)
+- **Monochrome Premium Black-and-White Theme:**
+  - Implemented dual-theme architecture supporting both pure OLED dark mode (`#000000`, surface `#0c0c0e`, border `#27272a`, text `#ffffff`) and minimal paper light mode (`#ffffff`, surface `#f8fafc`, border `#e2e8f0`, text `#09090b`).
+  - Added real-time theme toggle persisted across sessions.
+- **Expo Go Compatibility & Architecture:**
+  - App developed in Expo 52 SDK without prebuild, ejection, or custom native modules, running directly in Expo Go on Android.
+  - Multi-tab navigation with Expo Router (`expo-router`):
+    - `(tabs)/index.js`: Remote status screen with active bridge reachability, latency probe, pending approval action card, and stop generation control.
+    - `(tabs)/chat.js`: Linear/iMessage-style conversational feed with distinct user and agent message bubbles, monospace pre-formatted code support, auto-scrolling, and floating prompt composer.
+    - `(tabs)/bridges.js`: Multi-OS profile manager for Debian and Windows dual-boot setups, showing per-profile latency probes, active profile switcher, manual profile creator, test ping trigger, and theme toggle.
+    - `scanner.js`: Modal QR scanner using `expo-camera` (`CameraView`) with fallback text JSON parser, validating with shared `PairingPayloadSchema`.
+- **Packaging & Dependency Resolution in pnpm Monorepo:**
+  - Configured `node-linker=hoisted` in root `.npmrc` to provide flat node_modules resolution required by React Native Metro.
+  - Added `metro.config.js` watching monorepo root and prioritizing resolution across workspace dependencies.
+- **Static Web Export & Bridge Integration:**
+  - Static export built via `expo export --platform web`.
+  - Upgraded standalone web client in `webApp.ts` with the exact same black-and-white minimalist design, ensuring immediate accessibility from any mobile or desktop web browser directly over Tailscale without requiring Metro.
+
+## 2026-11-09: Expo SDK 58, Chrome Floating Bar, Typography & Realtime Agent Indicator
+- **Expo SDK 58 & Dependency Resolution:**
+  - Upgraded Expo from SDK 52 to SDK 58 (`expo@~58.0.23`, `react@19.3.0`, `react-native@0.88.1`, `expo-router@~58.0.30`).
+  - Diagnosed `TypeError: Cannot read property 'EventEmitter' of undefined` using `npx expo-doctor`: resolved missing `expo-font` peer dependency required by icon packages and deprecated `splash` configuration in `app.json`.
+  - Added lazy loading in `storage.js` to ensure native modules like `expo-secure-store` are never evaluated before Expo runtime initialization.
+- **Chrome / Web App Layout & Typography:**
+  - Enforced `overflow-x: hidden !important` across `html`, `body`, `#mainContent`, and `#messagesContainer` to eliminate horizontal scroll in mobile Chrome.
+  - Implemented Poppins font across all views via Google Fonts and CSS rules.
+  - Redesigned prompt input bar as a fixed floating pill centered with `left: 50%; transform: translateX(-50%)` and layered ambient box-shadow.
+  - Added prominent white circular stop button with solid stop icon at the right end of the floating bar.
+  - Designed vector SVG AG Remote logo badge in header, chat placeholder, and agent messages.
+  - Implemented live in-chat working indicator bubble ("Antigravity is working...") with animated pulsing green indicator when agent state is `generating`.
+
+

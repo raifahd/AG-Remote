@@ -119,3 +119,12 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   BridgeErrorEventSchema
 ]);
 
+export const PairingPayloadSchema = z.object({
+  baseUrl: z.string().url(),
+  token: z.string().min(1),
+  ntfyTopic: z.string().optional()
+}).passthrough();
+
+export type PairingPayload = z.infer<typeof PairingPayloadSchema>;
+
+
