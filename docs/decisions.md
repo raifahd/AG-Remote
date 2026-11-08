@@ -51,3 +51,12 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Served unauthenticated static HTML/JS shell from the bridge at `/app` and `/app/*`.
   - Supports deep-link authentication via query token (`/app?token=...`) and persistent storage in `localStorage`.
   - Connects to `/v1/stream` WebSocket to render real-time approval cards and status updates, allowing 1-tap approvals from mobile browsers.
+
+## 2026-11-09: Phase 4 Prompting and Stop
+- **Trajectory & Chat Messages (`GetCascadeTrajectory`):**
+  - Confirmed ConnectRPC endpoint `GetCascadeTrajectory` with payload `{ cascadeId }` returns full trajectory details including all executed cortex steps.
+  - Extracted user prompts from steps with type `CORTEX_STEP_TYPE_USER_INPUT` (`userInput.userResponse`).
+  - Extracted agent responses from steps with type `CORTEX_STEP_TYPE_PLANNER_RESPONSE` (`plannerResponse.response`).
+  - Implemented `/v1/messages?limit=N` returning structured `ChatMessage` objects in reverse chronological order.
+- **Web App Chat & Controls:**
+  - Expanded web client at `/app` to include an interactive prompt textarea, Send button, Stop button, and live message history stream.

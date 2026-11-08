@@ -13,11 +13,14 @@ export function renderWebClientHtml(): string {
       --text: #cccccc;
       --text-bright: #ffffff;
       --accent: #0e639c;
+      --accent-hover: #1177bb;
       --green: #2ea043;
       --green-hover: #3fb950;
       --red: #da3633;
       --red-hover: #f85149;
       --amber: #d29922;
+      --bubble-user: #2d3748;
+      --bubble-agent: #1e293b;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -107,12 +110,11 @@ export function renderWebClientHtml(): string {
     .btn-approve:active { background: var(--green-hover); }
     .btn-reject { background: var(--red); }
     .btn-reject:active { background: var(--red-hover); }
-    .btn-stop { background: #444; color: #ff7b72; margin-top: 8px; width: 100%; }
+    .btn-prompt { background: var(--accent); width: 100%; margin-top: 8px; }
+    .btn-prompt:active { background: var(--accent-hover); }
+    .btn-stop { background: #333; color: #ff7b72; margin-top: 8px; width: 100%; border: 1px solid #444; }
 
-    .token-form {
-      margin-bottom: 16px;
-    }
-    input[type="text"] {
+    textarea, input[type="text"] {
       width: 100%;
       padding: 10px;
       border-radius: 6px;
@@ -120,9 +122,47 @@ export function renderWebClientHtml(): string {
       background: #181818;
       color: white;
       margin-top: 6px;
-      font-family: monospace;
+      font-family: inherit;
+      font-size: 0.95rem;
     }
+    textarea { min-height: 70px; resize: vertical; }
     .notice { font-size: 0.85rem; color: #888; margin-top: 8px; }
+
+    .chat-container {
+      max-height: 350px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 8px;
+      padding-right: 4px;
+    }
+    .chat-bubble {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .bubble-user {
+      align-self: flex-end;
+      background: var(--bubble-user);
+      color: #90cdf4;
+      border-bottom-right-radius: 2px;
+    }
+    .bubble-agent {
+      align-self: flex-start;
+      background: var(--bubble-agent);
+      color: #e2e8f0;
+      border-bottom-left-radius: 2px;
+      border: 1px solid #334155;
+    }
+    .bubble-meta {
+      font-size: 0.7rem;
+      color: #718096;
+      margin-top: 4px;
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -131,11 +171,11 @@ export function renderWebClientHtml(): string {
     <span id="statusBadge" class="status-badge status-idle">Connecting...</span>
   </header>
 
-  <div id="authSection" class="card token-form" style="display: none;">
+  <div id="authSection" class="card" style="display: none;">
     <h2>Pairing Bearer Token</h2>
     <p class="notice">Enter the 64-character bearer token from your PC.</p>
     <input type="text" id="tokenInput" placeholder="Paste bearer token">
-    <button style="background: var(--accent); margin-top: 8px; width: 100%;" onclick="saveToken()">Save Token</button>
+    <button class="btn-prompt" onclick="saveToken()">Save Token</button>
   </div>
 
   <div id="approvalCard" class="card" style="display: none; border-color: var(--amber);">
@@ -151,10 +191,17 @@ export function renderWebClientHtml(): string {
   </div>
 
   <div class="card">
-    <h2>Session Status</h2>
-    <p><strong>Active Session:</strong> <span id="sessionId">None</span></p>
-    <p><strong>Status:</strong> <span id="statusText">idle</span></p>
+    <h2>Prompt Agent</h2>
+    <textarea id="promptInput" placeholder="Type prompt to send to active conversation..."></textarea>
+    <button class="btn-prompt" id="sendPromptBtn" onclick="handleSendPrompt()">Send Prompt</button>
     <button class="btn-stop" id="stopBtn" onclick="handleStop()">Stop Run</button>
+  </div>
+
+  <div class="card">
+    <h2>Recent Messages</h2>
+    <div id="chatMessages" class="chat-container">
+      <p style="color: #666; font-size: 0.85rem;">No recent messages loaded.</p>
+    </div>
   </div>
 
   <script>
@@ -175,6 +222,7 @@ export function renderWebClientHtml(): string {
         localStorage.setItem('ag_remote_token', val);
         document.getElementById('authSection').style.display = 'none';
         refreshState();
+        refreshMessages();
         initWebSocket();
       }
     }
@@ -208,16 +256,37 @@ export function renderWebClientHtml(): string {
       updateUI(state);
     }
 
+    async function refreshMessages() {
+      const msgs = await apiCall('/v1/messages?limit=15');
+      if (!Array.isArray(msgs)) return;
+      const container = document.getElementById('chatMessages');
+      if (msgs.length === 0) {
+        container.innerHTML = '<p style="color: #666; font-size: 0.85rem;">No messages yet.</p>';
+        return;
+      }
+      container.innerHTML = msgs.map(m => {
+        const roleClass = m.role === 'user' ? 'bubble-user' : 'bubble-agent';
+        const roleLabel = m.role === 'user' ? 'User' : 'Antigravity Agent';
+        const time = new Date(m.timestamp).toLocaleTimeString();
+        return '<div class="chat-bubble ' + roleClass + '"><strong>' + roleLabel + '</strong><br>' +
+          escapeHtml(m.text) +
+          '<span class="bubble-meta">' + time + '</span></div>';
+      }).join('');
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
     function updateUI(state) {
       const statusBadge = document.getElementById('statusBadge');
-      const statusText = document.getElementById('statusText');
-      const sessionId = document.getElementById('sessionId');
       const approvalCard = document.getElementById('approvalCard');
 
       statusBadge.className = 'status-badge status-' + state.status;
       statusBadge.textContent = state.status;
-      statusText.textContent = state.status;
-      sessionId.textContent = state.activeSessionId ? state.activeSessionId.slice(0, 12) + '...' : 'None';
 
       currentApproval = state.pendingApproval;
       if (state.pendingApproval) {
@@ -226,6 +295,20 @@ export function renderWebClientHtml(): string {
         document.getElementById('approvalSummary').textContent = state.pendingApproval.summary;
       } else {
         approvalCard.style.display = 'none';
+      }
+    }
+
+    async function handleSendPrompt() {
+      const input = document.getElementById('promptInput');
+      const text = input.value.trim();
+      if (!text) return;
+      document.getElementById('sendPromptBtn').disabled = true;
+      const res = await apiCall('/v1/prompt', 'POST', { text });
+      document.getElementById('sendPromptBtn').disabled = false;
+      if (res && res.ok) {
+        input.value = '';
+        refreshState();
+        refreshMessages();
       }
     }
 
@@ -268,6 +351,7 @@ export function renderWebClientHtml(): string {
         try {
           const msg = JSON.parse(event.data);
           refreshState();
+          refreshMessages();
         } catch {}
       };
 
@@ -280,10 +364,10 @@ export function renderWebClientHtml(): string {
       document.getElementById('authSection').style.display = 'block';
     } else {
       refreshState();
+      refreshMessages();
       initWebSocket();
     }
   </script>
 </body>
 </html>`;
 }
-

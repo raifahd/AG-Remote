@@ -30,6 +30,30 @@ interface GetAllTrajectoriesResponse {
   trajectorySummaries?: Record<string, RawTrajectorySummary>;
 }
 
+interface RawStep {
+  type?: string;
+  status?: string;
+  metadata?: {
+    createdAt?: string;
+    executionId?: string;
+  };
+  userInput?: {
+    userResponse?: string;
+  };
+  plannerResponse?: {
+    messageId?: string;
+    response?: string;
+  };
+}
+
+interface GetCascadeTrajectoryResponse {
+  trajectory?: {
+    trajectoryId?: string;
+    cascadeId?: string;
+    steps?: RawStep[];
+  };
+}
+
 export class SdkAdapter implements AgentAdapter {
   private lsPort: number;
   private csrfToken: string;
@@ -165,8 +189,44 @@ export class SdkAdapter implements AgentAdapter {
     };
   }
 
-  async getMessages(_limit: number): Promise<ChatMessage[]> {
-    return [];
+  async getMessages(limit: number): Promise<ChatMessage[]> {
+    const cascadeId = this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
+    if (!cascadeId) {
+      return [];
+    }
+
+    try {
+      const resp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId });
+      const steps = resp?.trajectory?.steps ?? [];
+      const messages: ChatMessage[] = [];
+
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        if (!step) {
+          continue;
+        }
+
+        if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && step.userInput?.userResponse) {
+          messages.push({
+            id: step.metadata?.executionId ?? `user-${i}`,
+            role: 'user',
+            text: step.userInput.userResponse,
+            timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
+          });
+        } else if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.plannerResponse?.response) {
+          messages.push({
+            id: step.plannerResponse.messageId ?? `agent-${i}`,
+            role: 'agent',
+            text: step.plannerResponse.response,
+            timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
+          });
+        }
+      }
+
+      return messages.slice(-limit);
+    } catch {
+      return [];
+    }
   }
 
   async sendPrompt(text: string): Promise<void> {
