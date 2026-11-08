@@ -32,3 +32,4 @@ Matrix of Antigravity capabilities verified during Phase 0 Discovery Spike.
 - **Debian 13 (KDE):** `/opt/antigravity-ide/antigravity-ide`
   - Desktop entry: `/usr/share/applications/antigravity.desktop` (override location: `~/.local/share/applications/antigravity.desktop`)
 - **Windows:** Default path `%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe` (to be confirmed upon dual-boot)
+
