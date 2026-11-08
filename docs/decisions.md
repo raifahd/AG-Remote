@@ -41,3 +41,13 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Configured `/v1/stream` WebSocket endpoint in `BridgeServer`.
   - Requires bearer token authentication either via query parameter (`?token=...`) or first frame.
   - Broadcasts all state machine `AgentEvent` objects (`status_changed`, `run_finished`, `approval_requested`, `bridge_error`) as JSON text frames in real time.
+
+## 2026-11-09: Phase 3 Approvals (MVP Milestone 2)
+- **Approval Classification & Lifecycle:**
+  - `ApprovalManager` generates transient, cryptographically random `requestId`s (`req_<hex>`).
+  - Strict validation rejects stale or nonexistent requests with `STALE_REQUEST` or `NO_PENDING_APPROVAL`.
+  - Step classification differentiates `terminal` (terminal command execution), `edit` (agent code modifications), and `tool` (external tool invocations), dispatching the corresponding VS Code extension commands (`antigravity.terminalCommand.accept`, `antigravity.agent.acceptAgentStep`, `antigravity.command.accept`).
+- **Web Approval Client at `/app`:**
+  - Served unauthenticated static HTML/JS shell from the bridge at `/app` and `/app/*`.
+  - Supports deep-link authentication via query token (`/app?token=...`) and persistent storage in `localStorage`.
+  - Connects to `/v1/stream` WebSocket to render real-time approval cards and status updates, allowing 1-tap approvals from mobile browsers.

@@ -201,14 +201,25 @@ export class SdkAdapter implements AgentAdapter {
   }
 
   async approve(): Promise<void> {
+    const kind = this.stateMachine.getPendingApproval()?.kind;
     if (this.executeCommand) {
-      try {
-        await this.executeCommand('antigravity.agent.acceptAgentStep');
-      } catch {
+      if (kind === 'terminal') {
         try {
           await this.executeCommand('antigravity.terminalCommand.accept');
         } catch {
           await this.executeCommand('antigravity.command.accept');
+        }
+      } else if (kind === 'edit') {
+        try {
+          await this.executeCommand('antigravity.agent.acceptAgentStep');
+        } catch {
+          await this.executeCommand('antigravity.command.accept');
+        }
+      } else {
+        try {
+          await this.executeCommand('antigravity.command.accept');
+        } catch {
+          await this.executeCommand('antigravity.agent.acceptAgentStep');
         }
       }
     }
@@ -216,14 +227,25 @@ export class SdkAdapter implements AgentAdapter {
   }
 
   async reject(): Promise<void> {
+    const kind = this.stateMachine.getPendingApproval()?.kind;
     if (this.executeCommand) {
-      try {
-        await this.executeCommand('antigravity.agent.rejectAgentStep');
-      } catch {
+      if (kind === 'terminal') {
         try {
           await this.executeCommand('antigravity.terminalCommand.reject');
         } catch {
           await this.executeCommand('antigravity.command.reject');
+        }
+      } else if (kind === 'edit') {
+        try {
+          await this.executeCommand('antigravity.agent.rejectAgentStep');
+        } catch {
+          await this.executeCommand('antigravity.command.reject');
+        }
+      } else {
+        try {
+          await this.executeCommand('antigravity.command.reject');
+        } catch {
+          await this.executeCommand('antigravity.agent.rejectAgentStep');
         }
       }
     }
