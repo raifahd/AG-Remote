@@ -1,0 +1,11 @@
+{
+  "name": "@ag-remote/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "echo mobile-placeholder-typecheck",
+    "lint": "echo mobile-placeholder-lint",
+    "build": "echo mobile-placeholder-build"
+  }
+}
+

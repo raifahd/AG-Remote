@@ -1,0 +1,20 @@
+{
+  "name": "@ag-remote/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo shared-lint-ok"
+  },
+  "dependencies": {
+    "zod": "3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.17.19",
+    "typescript": "5.7.3"
+  }
+}
+
