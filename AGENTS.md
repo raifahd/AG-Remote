@@ -50,3 +50,4 @@ These rules are binding.
 ## Definition of Done for Any Task
 
 Code compiles, typecheck and lint pass, tests pass, behavior was demonstrated, docs/capabilities.md or docs/decisions.md updated if anything surprising was found, and the change is committed.
+

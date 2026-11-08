@@ -1,0 +1,8 @@
+node_modules/
+dist/
+build/
+.expo/
+*.vsix
+scratch/
+.env*
+!.env.example
