@@ -242,18 +242,7 @@ export class SdkAdapter implements AgentAdapter {
 
     const payload = {
       cascadeId,
-      items: [{ chunk: { case: 'text', value: text } }],
-      cascadeConfig: {
-        plannerConfig: {
-          plannerTypeConfig: {
-            case: 'conversational',
-            value: {}
-          },
-          requestedModel: {
-            choice: { case: 'model', value: 1018 }
-          }
-        }
-      }
+      items: [{ text }]
     };
 
     await this.callRpc('SendUserCascadeMessage', payload);
