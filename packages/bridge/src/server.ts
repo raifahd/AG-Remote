@@ -12,6 +12,7 @@ import {
 } from '@ag-remote/shared';
 import { RateLimiter, TokenManager, constantTimeCompare } from './auth.js';
 import { AgentAdapter } from './adapters/AgentAdapter.js';
+import { NtfyNotifier } from './notifier.js';
 
 export interface ServerConfig {
   port: number;
@@ -25,6 +26,7 @@ export class BridgeServer {
   private readonly adapter: AgentAdapter;
   private readonly tokenManager: TokenManager;
   private readonly rateLimiter: RateLimiter;
+  private readonly notifier?: NtfyNotifier | undefined;
   private readonly app: express.Express;
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -35,12 +37,14 @@ export class BridgeServer {
     config: ServerConfig,
     adapter: AgentAdapter,
     tokenManager: TokenManager,
-    rateLimiter = new RateLimiter()
+    rateLimiter = new RateLimiter(),
+    notifier?: NtfyNotifier | undefined
   ) {
     this.config = config;
     this.adapter = adapter;
     this.tokenManager = tokenManager;
     this.rateLimiter = rateLimiter;
+    this.notifier = notifier;
     this.app = express();
     this.configureApp();
   }
@@ -148,8 +152,9 @@ export class BridgeServer {
       }
     });
 
-    v1Router.post('/push/test', (_req: Request, res: Response) => {
-      res.json({ ok: true });
+    v1Router.post('/push/test', async (_req: Request, res: Response) => {
+      const ok = this.notifier ? await this.notifier.notifyTest() : true;
+      res.json({ ok });
     });
 
     this.app.use('/v1', v1Router);
@@ -237,6 +242,11 @@ export class BridgeServer {
 
       this.eventSubscription = this.adapter.onEvent((event) => {
         this.broadcastEvent(event);
+        if (event.type === 'run_finished') {
+          void this.notifier?.notifyRunFinished(event.sessionId);
+        } else if (event.type === 'approval_requested') {
+          void this.notifier?.notifyApprovalRequested(event.kind, event.summary);
+        }
       });
 
       server.listen(this.config.port, this.config.host, () => {

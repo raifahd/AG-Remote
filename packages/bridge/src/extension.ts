@@ -2,7 +2,9 @@ import * as vscode from 'vscode';
 import { BridgeServer } from './server.js';
 import { findTailscaleIpv4 } from './network.js';
 import { TokenManager, SecretStore, FileSecretStore } from './auth.js';
-import { FakeAdapter } from './adapters/FakeAdapter.js';
+import { SdkAdapter } from './adapters/SdkAdapter.js';
+import { AgentStateMachine } from './stateMachine.js';
+import { NtfyNotifier } from './notifier.js';
 
 class VsCodeSecretStore implements SecretStore {
   private readonly secrets: vscode.SecretStorage;
@@ -25,8 +27,10 @@ class VsCodeSecretStore implements SecretStore {
 }
 
 let serverInstance: BridgeServer | null = null;
+let adapterInstance: SdkAdapter | null = null;
 let statusBarItem: vscode.StatusBarItem | null = null;
 let tokenManagerInstance: TokenManager | null = null;
+let notifierInstance: NtfyNotifier | null = null;
 let outputChannel: vscode.OutputChannel | null = null;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -47,6 +51,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   tokenManagerInstance = new TokenManager(secretStore, isFallback);
+  notifierInstance = new NtfyNotifier(secretStore);
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'ag-remote.showQr';
@@ -78,7 +83,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void token;
   });
 
-  context.subscriptions.push(startCmd, stopCmd, showQrCmd, regenTokenCmd);
+  const testPushCmd = vscode.commands.registerCommand('ag-remote.testPush', async () => {
+    if (!notifierInstance) {
+      return;
+    }
+    const ok = await notifierInstance.notifyTest();
+    if (ok) {
+      vscode.window.showInformationMessage('AG Remote: Test notification sent successfully to ntfy.');
+    } else {
+      vscode.window.showErrorMessage('AG Remote: Failed to send test notification to ntfy.');
+    }
+  });
+
+  context.subscriptions.push(startCmd, stopCmd, showQrCmd, regenTokenCmd, testPushCmd);
 }
 
 export async function deactivate(): Promise<void> {
@@ -104,16 +121,27 @@ async function startBridge(): Promise<void> {
     return;
   }
 
-  const adapter = new FakeAdapter();
+  if (notifierInstance) {
+    notifierInstance.setTailscaleIp(tailscaleIp);
+  }
+
+  const stateMachine = new AgentStateMachine({ debounceMs: 2000 });
+  adapterInstance = new SdkAdapter(stateMachine, {
+    executeCommand: async (cmd: string, ...args: unknown[]) => Promise.resolve(vscode.commands.executeCommand(cmd, ...args))
+  });
+  adapterInstance.startPolling();
+
   serverInstance = new BridgeServer(
     {
       port: 48123,
       host: tailscaleIp,
       version: '0.1.0',
-      adapterMode: 'fake'
+      adapterMode: 'sdk'
     },
-    adapter,
-    tokenManagerInstance
+    adapterInstance,
+    tokenManagerInstance,
+    undefined,
+    notifierInstance ?? undefined
   );
 
   try {
@@ -122,6 +150,8 @@ async function startBridge(): Promise<void> {
     vscode.window.showInformationMessage(`AG Remote: Bridge listening on http://${tailscaleIp}:48123`);
     outputChannel?.appendLine(`Bridge started at http://${tailscaleIp}:48123`);
   } catch (err) {
+    adapterInstance.stopPolling();
+    adapterInstance = null;
     serverInstance = null;
     updateStatusBar('stopped');
     const msg = err instanceof Error ? err.message : String(err);
@@ -130,6 +160,10 @@ async function startBridge(): Promise<void> {
 }
 
 async function stopBridge(): Promise<void> {
+  if (adapterInstance) {
+    adapterInstance.stopPolling();
+    adapterInstance = null;
+  }
   if (serverInstance) {
     await serverInstance.stop();
     serverInstance = null;
@@ -159,9 +193,10 @@ async function showPairingView(): Promise<void> {
     return;
   }
   const token = await tokenManagerInstance.getOrCreateToken();
+  const ntfyTopic = notifierInstance ? await notifierInstance.getOrCreateTopic() : 'none';
   const tailscaleIp = findTailscaleIpv4();
   const baseUrl = tailscaleIp ? `http://${tailscaleIp}:48123` : 'http://<tailscale-ip>:48123';
-  const pairingPayload = JSON.stringify({ baseUrl, token });
+  const pairingPayload = JSON.stringify({ baseUrl, token, ntfyTopic });
 
   const panel = vscode.window.createWebviewPanel(
     'agRemotePairing',
@@ -188,6 +223,8 @@ async function showPairingView(): Promise<void> {
   <div class="box">
     <p><strong>Base URL:</strong> <code>${baseUrl}</code></p>
     <p><strong>Bearer Token:</strong> <code>${token}</code></p>
+    <p><strong>ntfy Topic:</strong> <code>${ntfyTopic}</code></p>
+    <p><strong>ntfy URL:</strong> <a href="https://ntfy.sh/${ntfyTopic}">https://ntfy.sh/${ntfyTopic}</a></p>
     <p><strong>Pairing JSON:</strong> <code>${pairingPayload}</code></p>
   </div>
   <p>Status: ${serverInstance ? 'Bridge is RUNNING' : 'Bridge is STOPPED (Start via Command Palette: "AG Remote: Start Bridge")'}</p>
