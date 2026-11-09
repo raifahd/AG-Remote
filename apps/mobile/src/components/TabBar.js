@@ -1,12 +1,23 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter, useNavigation } from 'expo-router';
 import { useTheme } from '../theme.js';
 import Icon from './Icon.js';
 
-export default function TabBar({ state, descriptors, navigation }) {
+export default function TabBar(props) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
+  const router = useRouter();
+
+  let contextNav = null;
+  try {
+    contextNav = useNavigation();
+  } catch {}
+
+  const nav = props.navigation || contextNav;
+  const state = props.state;
+  const descriptors = props.descriptors;
 
   const getRouteInfo = (routeName) => {
     switch (routeName) {
@@ -23,6 +34,18 @@ export default function TabBar({ state, descriptors, navigation }) {
         return { label: routeName, icon: 'home' };
     }
   };
+
+  const routes = state?.routes?.filter((route) => {
+    if (descriptors && descriptors[route.key]?.options?.href === null) {
+      return false;
+    }
+    return ['index', 'chat', 'workspaces', 'settings'].includes(route.name);
+  }) || [
+    { key: 'index', name: 'index' },
+    { key: 'chat', name: 'chat' },
+    { key: 'workspaces', name: 'workspaces' },
+    { key: 'settings', name: 'settings' }
+  ];
 
   const bottomMargin = Math.max(insets.bottom, 14);
 
@@ -45,19 +68,34 @@ export default function TabBar({ state, descriptors, navigation }) {
           }
         ]}
       >
-        {state.routes.map((route, index) => {
-          const isFocused = state.index === index;
+        {routes.map((route, index) => {
+          const currentRouteName = state?.routes?.[state?.index]?.name;
+          const isFocused = currentRouteName
+            ? currentRouteName === route.name
+            : index === 0;
+
           const { label, icon } = getRouteInfo(route.name);
 
           const onPress = () => {
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true
-            });
+            if (nav && typeof nav.emit === 'function') {
+              const event = nav.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true
+              });
+              if (event?.defaultPrevented) {
+                return;
+              }
+            }
 
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            if (!isFocused) {
+              if (nav && typeof nav.navigate === 'function') {
+                nav.navigate(route.name);
+              } else if (typeof router.navigate === 'function') {
+                router.navigate(route.name === 'index' ? '/' : `/(tabs)/${route.name}`);
+              } else {
+                router.push(route.name === 'index' ? '/' : `/(tabs)/${route.name}`);
+              }
             }
           };
 
