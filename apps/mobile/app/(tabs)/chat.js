@@ -7,115 +7,79 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator
+  Platform
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import {
-  BubbleChatIcon,
-  ArrowUp01Icon,
-  StopIcon
-} from '@hugeicons/core-free-icons';
 import { useTheme } from '../../src/theme.js';
+import TopBar from '../../src/components/TopBar.js';
+import Icon from '../../src/components/Icon.js';
 import { getActiveProfile } from '../../src/storage.js';
 import { fetchMessages, fetchState, sendPrompt, sendStop } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
-function MarkdownMessage({ text, theme }) {
+function CodeSnippet({ code, lang = 'code', theme }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <View style={[styles.codeBubble, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+      <View style={[styles.codeHeader, { backgroundColor: theme.raised }]}>
+        <Text style={[styles.codeLang, { color: theme.accent }]}>{lang}</Text>
+        <TouchableOpacity style={styles.copyButton} onPress={handleCopy} activeOpacity={0.7}>
+          <Icon name={copied ? 'check' : 'copy'} size={15} color={theme.muted} />
+          <Text style={[styles.copyText, { color: theme.muted }]}>
+            {copied ? 'Copied' : 'Copy'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={[styles.codePre, { color: theme.text }]}>{code.trimEnd()}</Text>
+    </View>
+  );
+}
+
+function RenderBubbleContent({ text, theme }) {
   if (!text) return null;
 
   const tripleTick = String.fromCharCode(96, 96, 96);
-  const singleTick = String.fromCharCode(96);
-  const blocks = text.split(tripleTick);
-
-  return (
-    <View style={styles.mdContainer}>
-      {blocks.map((block, i) => {
-        if (i % 2 === 1) {
-          let code = block;
-          const firstNl = block.indexOf('\n');
-          if (firstNl !== -1) {
-            code = block.slice(firstNl + 1);
+  if (text.includes(tripleTick)) {
+    const parts = text.split(tripleTick);
+    return (
+      <View style={styles.bubbleCol}>
+        {parts.map((part, index) => {
+          if (index % 2 === 1) {
+            let lang = 'code';
+            let codeContent = part;
+            const nlIndex = part.indexOf('\n');
+            if (nlIndex !== -1) {
+              const possibleLang = part.slice(0, nlIndex).trim();
+              if (possibleLang) lang = possibleLang;
+              codeContent = part.slice(nlIndex + 1);
+            }
+            return (
+              <CodeSnippet
+                key={`cs-${index}`}
+                code={codeContent}
+                lang={lang}
+                theme={theme}
+              />
+            );
           }
+          if (!part.trim()) return null;
           return (
-            <View key={`cb-${i}`} style={styles.codeBlock}>
-              <Text style={styles.codeText}>{code.trimEnd()}</Text>
-            </View>
+            <Text key={`txt-${index}`} style={[styles.bubbleText, { color: theme.text }]}>
+              {part.trim()}
+            </Text>
           );
-        }
+        })}
+      </View>
+    );
+  }
 
-        const lines = block.split('\n');
-        return lines.map((line, lineIdx) => {
-          if (!line.trim()) {
-            return <View key={`sp-${i}-${lineIdx}`} style={{ height: 6 }} />;
-          }
-
-          if (line.startsWith('### ')) {
-            return (
-              <Text key={`h3-${i}-${lineIdx}`} style={[styles.mdH3, { color: theme.text }]}>
-                {line.slice(4)}
-              </Text>
-            );
-          }
-          if (line.startsWith('## ')) {
-            return (
-              <Text key={`h2-${i}-${lineIdx}`} style={[styles.mdH2, { color: theme.text }]}>
-                {line.slice(3)}
-              </Text>
-            );
-          }
-          if (line.startsWith('# ')) {
-            return (
-              <Text key={`h1-${i}-${lineIdx}`} style={[styles.mdH1, { color: theme.text }]}>
-                {line.slice(2)}
-              </Text>
-            );
-          }
-
-          const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
-          const lineContent = isBullet ? line.trim().slice(2) : line;
-
-          const inlineParts = lineContent.split(singleTick);
-
-          return (
-            <View
-              key={`ln-${i}-${lineIdx}`}
-              style={isBullet ? styles.bulletRow : styles.textRow}
-            >
-              {isBullet && (
-                <Text style={[styles.bulletDot, { color: theme.textSecondary }]}>• </Text>
-              )}
-              <Text style={[styles.regularText, { color: theme.agentText }]}>
-                {inlineParts.map((part, partIdx) => {
-                  if (partIdx % 2 === 1) {
-                    return (
-                      <Text
-                        key={`ic-${partIdx}`}
-                        style={[styles.inlineCode, { color: theme.text }]}
-                      >
-                        {part}
-                      </Text>
-                    );
-                  }
-
-                  const boldParts = part.split('**');
-                  return boldParts.map((bp, bpIdx) => (
-                    <Text
-                      key={`bp-${bpIdx}`}
-                      style={bpIdx % 2 === 1 ? styles.boldText : undefined}
-                    >
-                      {bp}
-                    </Text>
-                  ));
-                })}
-              </Text>
-            </View>
-          );
-        });
-      })}
-    </View>
-  );
+  return <Text style={[styles.bubbleText, { color: theme.text }]}>{text}</Text>;
 }
 
 export default function ChatScreen() {
@@ -124,10 +88,18 @@ export default function ChatScreen() {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [agentStatus, setAgentStatus] = useState('idle');
-  const [wsConnected, setWsConnected] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [blinker, setBlinker] = useState(true);
+
   const flatListRef = useRef(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBlinker((b) => !b);
+    }, 550);
+    return () => clearInterval(interval);
+  }, []);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -135,18 +107,13 @@ export default function ChatScreen() {
       setProfile(active);
       if (active) {
         const [list, st] = await Promise.all([
-          fetchMessages(active, 50),
+          fetchMessages(active, 50).catch(() => []),
           fetchState(active).catch(() => null)
         ]);
-        setMessages(list);
-        if (st && st.status) {
-          setAgentStatus(st.status);
-        }
+        if (list) setMessages(list);
+        if (st?.status) setAgentStatus(st.status);
       }
     } catch {
-      // ignore
-    } finally {
-      setLoading(false);
     }
   }, []);
 
@@ -160,15 +127,8 @@ export default function ChatScreen() {
     if (!profile) return;
     const ws = new BridgeWebSocketClient(
       profile,
-      (event) => {
-        if (event.type === 'state_changed') {
-          if (event.state && event.state.status) {
-            setAgentStatus(event.state.status);
-          }
-        }
-        if (event.type === 'message_appended' || event.type === 'run_finished') {
-          loadMessages();
-        }
+      () => {
+        loadMessages();
       },
       (connected) => {
         setWsConnected(connected);
@@ -178,26 +138,19 @@ export default function ChatScreen() {
   }, [profile, loadMessages]);
 
   const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || !profile || sending) return;
+    const trimmed = inputText.trim();
+    if (!trimmed || !profile || sending) return;
 
-    setInputText('');
     setSending(true);
-    setAgentStatus('generating');
-
-    const optimisticMsg = {
-      id: `temp-${Date.now()}`,
-      role: 'user',
-      text,
-      timestamp: Date.now()
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-
+    setInputText('');
     try {
-      await sendPrompt(profile, text);
+      await sendPrompt(profile, trimmed);
       await loadMessages();
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     } catch (err) {
-      alert(err.message || 'Failed to send prompt');
+      alert(err.message || 'Failed to send message');
     } finally {
       setSending(false);
     }
@@ -213,322 +166,392 @@ export default function ChatScreen() {
     }
   };
 
-  const isGenerating = agentStatus === 'generating' || sending;
+  const isWorking = agentStatus === 'generating';
 
   const renderItem = ({ item }) => {
-    const isUser = item.role === 'user';
-    const time = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const isUser = item.sender === 'user';
+    const isTool = item.kind === 'tool';
 
-    return (
-      <View style={[styles.bubbleWrapper, isUser ? styles.userWrapper : styles.agentWrapper]}>
+    if (isTool) {
+      return (
         <View
           style={[
-            styles.bubble,
-            isUser
-              ? [styles.userBubble, { backgroundColor: theme.userBubble }]
-              : [styles.agentBubble, { backgroundColor: theme.agentBubble, borderColor: theme.borderSubtle }]
+            styles.toolStep,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border
+            }
           ]}
         >
-          {isUser ? (
-            <Text style={[styles.userMessageText, { color: theme.userText }]}>
-              {item.text}
-            </Text>
-          ) : (
-            <MarkdownMessage text={item.text} theme={theme} />
-          )}
-          <Text
+          <View
             style={[
-              styles.timestamp,
-              { color: isUser ? 'rgba(0,0,0,0.45)' : theme.textMuted }
+              styles.tinyIcon,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border
+              }
             ]}
           >
-            {isUser ? 'You · ' : 'Antigravity · '}{time}
-          </Text>
+            <Icon name="terminal" size={17} color={theme.accent} />
+          </View>
+          <View style={styles.toolStepContent}>
+            <Text style={[styles.toolStepTitle, { color: theme.text }]} numberOfLines={1}>
+              {item.title || 'Executed tool'}
+            </Text>
+            <Text style={[styles.toolStepDesc, { color: theme.muted }]} numberOfLines={1}>
+              {item.text || item.summary || 'Command output'}
+            </Text>
+          </View>
+          <Icon name="chevron" size={17} color={theme.muted} />
+        </View>
+      );
+    }
+
+    if (isUser) {
+      return (
+        <View style={styles.userMessageRow}>
+          <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
+            <Text style={styles.userBubbleText}>{item.text}</Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.agentMessageRow}>
+        <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
+          <Text style={styles.agentAvatarText}>AG</Text>
+        </View>
+        <View
+          style={[
+            styles.agentBubble,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border
+            }
+          ]}
+        >
+          <RenderBubbleContent text={item.text} theme={theme} />
         </View>
       </View>
     );
   };
 
+  const statusLabel = wsConnected
+    ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
+    : `${(profile?.name || 'LAPTOP').toUpperCase()}`;
+
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: theme.bg }]}
+      style={[styles.root, { backgroundColor: theme.bg }]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
-      {!wsConnected && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerText}>Reconnecting to bridge...</Text>
-        </View>
-      )}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={theme.text} size="large" />
-        </View>
-      ) : messages.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <HugeiconsIcon icon={BubbleChatIcon} size={48} color={theme.textMuted} />
-          <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-            No messages yet. Send a prompt to begin pair programming.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
-          ListFooterComponent={
-            isGenerating ? (
-              <View style={[styles.bubbleWrapper, styles.agentWrapper]}>
-                <View
-                  style={[
-                    styles.bubble,
-                    styles.agentBubble,
-                    {
-                      backgroundColor: theme.agentBubble,
-                      borderColor: theme.borderSubtle,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 8
-                    }
-                  ]}
-                >
-                  <ActivityIndicator size="small" color={theme.text} />
-                  <Text style={[styles.regularText, { color: theme.textSecondary }]}>
-                    Antigravity is working...
-                  </Text>
-                </View>
-              </View>
-            ) : null
-          }
-        />
-      )}
+      <TopBar title={profile?.name || 'acme / dashboard'} status={statusLabel} />
 
-      <View style={styles.floatingContainer}>
-        <View style={[styles.floatingBar, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <TextInput
-            style={[styles.floatingInput, { color: theme.text }]}
-            placeholder="Message Antigravity..."
-            placeholderTextColor={theme.textMuted}
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={4000}
-          />
+      <FlatList
+        ref={flatListRef}
+        data={messages}
+        keyExtractor={(item) => String(item.id || item.timestamp || Math.random())}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={<Text style={[styles.dateLabel, { color: theme.subtle }]}>TODAY, 10:42</Text>}
+        ListFooterComponent={
+          isWorking ? (
+            <View style={styles.agentMessageRow}>
+              <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
+                <Text style={styles.agentAvatarText}>AG</Text>
+              </View>
+              <View
+                style={[
+                  styles.agentBubble,
+                  {
+                    backgroundColor: theme.surface,
+                    borderColor: theme.border
+                  }
+                ]}
+              >
+                <Text style={[styles.bubbleText, { color: theme.text }]}>
+                  Agent is generating
+                  <Text style={[styles.blinker, { color: theme.accent, opacity: blinker ? 1 : 0 }]}>
+                    {' |'}
+                  </Text>
+                </Text>
+              </View>
+            </View>
+          ) : null
+        }
+      />
+
+      <TouchableOpacity
+        style={[
+          styles.scrollBottomButton,
+          {
+            backgroundColor: theme.raised,
+            borderColor: theme.border
+          }
+        ]}
+        onPress={() => flatListRef.current?.scrollToEnd({ animated: true })}
+        activeOpacity={0.8}
+      >
+        <Icon name="arrow" size={17} color={theme.accent} />
+      </TouchableOpacity>
+
+      <View
+        style={[
+          styles.composer,
+          {
+            backgroundColor: theme.raised,
+            borderColor: theme.border
+          }
+        ]}
+      >
+        <TouchableOpacity style={styles.attachButton} activeOpacity={0.7}>
+          <Icon name="attach" size={20} color={theme.muted} />
+        </TouchableOpacity>
+        <TextInput
+          style={[styles.input, { color: theme.text }]}
+          placeholder="Message your agent"
+          placeholderTextColor={theme.subtle}
+          value={inputText}
+          onChangeText={setInputText}
+          multiline
+          maxLength={2000}
+        />
+        {isWorking ? (
           <TouchableOpacity
-            style={[
-              styles.sendButton,
-              { backgroundColor: inputText.trim().length > 0 ? theme.accent : theme.borderSubtle }
-            ]}
-            onPress={handleSend}
-            disabled={inputText.trim().length === 0 || sending}
-          >
-            {sending ? (
-              <ActivityIndicator size="small" color={theme.bg} />
-            ) : (
-              <HugeiconsIcon icon={ArrowUp01Icon} size={18} color={theme.bg} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.whiteCircleStopBtn}
+            style={[styles.sendButton, styles.stopButton, { backgroundColor: theme.danger }]}
             onPress={handleStop}
-            title="Stop generation"
+            activeOpacity={0.8}
           >
-            <HugeiconsIcon icon={StopIcon} size={14} color="#000000" />
+            <View style={styles.stopSquare} />
           </TouchableOpacity>
-        </View>
+        ) : (
+          <TouchableOpacity
+            style={[styles.sendButton, { backgroundColor: theme.accent }]}
+            onPress={handleSend}
+            activeOpacity={0.8}
+          >
+            <Icon name="send" size={18} color="#ffffff" />
+          </TouchableOpacity>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1
   },
-  offlineBanner: {
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(239, 68, 68, 0.3)'
-  },
-  offlineBannerText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#ef4444'
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32
-  },
-  emptyText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 20
-  },
   listContent: {
-    padding: 16,
-    paddingBottom: 96
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 175
   },
-  bubbleWrapper: {
-    marginVertical: 6,
-    maxWidth: '86%'
+  dateLabel: {
+    textAlign: 'center',
+    fontSize: 9,
+    letterSpacing: 0.8,
+    marginVertical: 14,
+    fontWeight: '600'
   },
-  userWrapper: {
-    alignSelf: 'flex-end'
+  agentMessageRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    marginBottom: 14,
+    maxWidth: '93%'
   },
-  agentWrapper: {
-    alignSelf: 'flex-start'
+  agentAvatar: {
+    width: 27,
+    height: 27,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0
   },
-  bubble: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 20
-  },
-  userBubble: {
-    borderBottomRightRadius: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 2
+  agentAvatarText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '700'
   },
   agentBubble: {
-    borderBottomLeftRadius: 4,
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+    borderTopLeftRadius: 5,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    borderBottomLeftRadius: 16,
     borderWidth: 1
   },
-  userMessageText: {
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: '500'
-  },
-  timestamp: {
-    fontSize: 10,
-    marginTop: 6,
-    alignSelf: 'flex-end'
-  },
-  mdContainer: {
-    width: '100%'
-  },
-  textRow: {
+  userMessageRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginVertical: 1
+    justifyContent: 'flex-end',
+    marginBottom: 14,
+    marginLeft: 'auto',
+    maxWidth: '90%'
   },
-  bulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginVertical: 2,
-    paddingLeft: 4
+  userBubble: {
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 5,
+    borderBottomRightRadius: 16,
+    borderBottomLeftRadius: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 18
+      },
+      android: {
+        elevation: 4
+      }
+    })
   },
-  bulletDot: {
-    fontSize: 14,
-    fontWeight: '700'
-  },
-  regularText: {
-    fontSize: 14,
-    lineHeight: 21,
-    flexShrink: 1
-  },
-  boldText: {
-    fontWeight: '700'
-  },
-  inlineCode: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  userBubbleText: {
+    color: '#ffffff',
     fontSize: 12,
-    backgroundColor: 'rgba(128,128,128,0.2)',
-    paddingHorizontal: 4,
-    borderRadius: 4
+    lineHeight: 18
   },
-  codeBlock: {
-    backgroundColor: '#09090b',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#27272a',
-    padding: 10,
-    marginVertical: 6
-  },
-  codeText: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 12,
-    color: '#fafafa'
-  },
-  mdH1: {
-    fontSize: 18,
-    fontWeight: '800',
-    marginTop: 10,
-    marginBottom: 4
-  },
-  mdH2: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 8,
-    marginBottom: 4
-  },
-  mdH3: {
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 6,
-    marginBottom: 2
-  },
-  floatingContainer: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 24 : 16,
-    left: 16,
-    right: 16
-  },
-  floatingBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 9999,
-    borderWidth: 1,
-    paddingVertical: 6,
-    paddingLeft: 18,
-    paddingRight: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    elevation: 8,
+  bubbleCol: {
     gap: 8
   },
-  floatingInput: {
+  bubbleText: {
+    fontSize: 12,
+    lineHeight: 18
+  },
+  blinker: {
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  toolStep: {
+    height: 52,
+    marginLeft: 35,
+    marginBottom: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9
+  },
+  tinyIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  toolStepContent: {
+    flex: 1
+  },
+  toolStepTitle: {
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  toolStepDesc: {
+    fontSize: 11,
+    marginTop: 1
+  },
+  codeBubble: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: 'hidden',
+    minWidth: 245
+  },
+  codeHeader: {
+    height: 34,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  codeLang: {
+    fontSize: 10,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    fontWeight: '600'
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
+  },
+  copyText: {
+    fontSize: 10
+  },
+  codePre: {
+    padding: 12,
+    fontSize: 10,
+    lineHeight: 16,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' })
+  },
+  scrollBottomButton: {
+    position: 'absolute',
+    right: 20,
+    bottom: 146,
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '90deg' }],
+    zIndex: 5
+  },
+  composer: {
+    position: 'absolute',
+    bottom: 86,
+    left: 20,
+    right: 20,
+    maxWidth: 440,
+    alignSelf: 'center',
+    minHeight: 56,
+    borderRadius: 18,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 7,
+    gap: 6,
+    zIndex: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 9 },
+        shadowOpacity: 0.25,
+        shadowRadius: 25
+      },
+      android: {
+        elevation: 8
+      }
+    })
+  },
+  attachButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  input: {
     flex: 1,
-    fontSize: 15,
-    paddingVertical: 6,
-    maxHeight: 100
+    fontSize: 12,
+    paddingVertical: 8,
+    maxHeight: 76
   },
   sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  whiteCircleStopBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
+    width: 39,
+    height: 39,
+    borderRadius: 13,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.15)',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3
+    justifyContent: 'center'
+  },
+  stopButton: {},
+  stopSquare: {
+    width: 12,
+    height: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 3
   }
 });

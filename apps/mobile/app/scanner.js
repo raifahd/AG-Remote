@@ -11,10 +11,9 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { HugeiconsIcon } from '@hugeicons/react-native';
-import { Camera01Icon } from '@hugeicons/core-free-icons';
 import { PairingPayloadSchema } from '@ag-remote/shared';
 import { useTheme } from '../src/theme.js';
+import Icon from '../src/components/Icon.js';
 import { saveProfile, setActiveProfileId } from '../src/storage.js';
 import { checkHealth } from '../src/api.js';
 
@@ -117,9 +116,9 @@ export default function ScannerScreen() {
         </View>
       ) : (
         <View style={[styles.permissionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <HugeiconsIcon icon={Camera01Icon} size={44} color={theme.textMuted} />
+          <Icon name="monitor" size={44} color={theme.muted} />
           <Text style={[styles.permissionTitle, { color: theme.text }]}>Camera Access</Text>
-          <Text style={[styles.permissionSub, { color: theme.textSecondary }]}>
+          <Text style={[styles.permissionSub, { color: theme.muted }]}>
             Camera is required to scan pairing QR codes. You can also paste the JSON payload below.
           </Text>
           {Platform.OS !== 'web' && (
@@ -127,20 +126,20 @@ export default function ScannerScreen() {
               style={[styles.primaryBtn, { backgroundColor: theme.accent }]}
               onPress={requestPermission}
             >
-              <Text style={[styles.primaryBtnText, { color: theme.bg }]}>Enable Camera</Text>
+              <Text style={styles.primaryBtnText}>Enable Camera</Text>
             </TouchableOpacity>
           )}
         </View>
       )}
 
       <View style={[styles.manualSection, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-        <Text style={[styles.manualLabel, { color: theme.textSecondary }]}>
+        <Text style={[styles.manualLabel, { color: theme.muted }]}>
           OR PASTE PAIRING JSON DIRECTLY
         </Text>
         <TextInput
-          style={[styles.manualInput, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }]}
+          style={[styles.manualInput, { backgroundColor: theme.raised, borderColor: theme.border, color: theme.text }]}
           placeholder='{"baseUrl":"http://100...","token":"...","ntfyTopic":"..."}'
-          placeholderTextColor={theme.textMuted}
+          placeholderTextColor={theme.subtle}
           multiline
           numberOfLines={3}
           value={manualJson}
@@ -154,9 +153,9 @@ export default function ScannerScreen() {
           disabled={isProcessing}
         >
           {isProcessing ? (
-            <ActivityIndicator size="small" color={theme.bg} />
+            <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Text style={[styles.submitBtnText, { color: theme.bg }]}>Pair With JSON</Text>
+            <Text style={styles.submitBtnText}>Pair With JSON</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -247,42 +246,43 @@ const styles = StyleSheet.create({
     marginTop: 18,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    borderRadius: 10
+    borderRadius: 12
   },
   primaryBtnText: {
-    fontSize: 14,
-    fontWeight: '700'
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600'
   },
   manualSection: {
     marginTop: 16,
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 20,
     borderWidth: 1
   },
   manualLabel: {
     fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontWeight: '600',
+    letterSpacing: 0.8,
     marginBottom: 8
   },
   manualInput: {
-    borderRadius: 8,
     borderWidth: 1,
-    padding: 10,
+    borderRadius: 12,
+    padding: 12,
     fontSize: 12,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    height: 70,
+    minHeight: 70,
     textAlignVertical: 'top'
   },
   submitBtn: {
     marginTop: 12,
     paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center'
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
   },
   submitBtnText: {
+    color: '#ffffff',
     fontSize: 13,
-    fontWeight: '700'
+    fontWeight: '600'
   }
 });
-

@@ -1,10 +1,27 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme.js';
 
 function RootLayoutNav() {
   const { theme, isDark } = useTheme();
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const existing = document.getElementById('ag-remote-fonts');
+      if (!existing) {
+        const link = document.createElement('link');
+        link.id = 'ag-remote-fonts';
+        link.rel = 'stylesheet';
+        link.href =
+          'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Poppins:wght@400;500;600;700&display=swap';
+        document.head.appendChild(link);
+      }
+      document.body.style.backgroundColor = theme.bg;
+      document.body.style.fontFamily = 'Poppins, sans-serif';
+    }
+  }, [theme.bg]);
 
   return (
     <>
@@ -39,4 +56,3 @@ export default function RootLayout() {
     </ThemeProvider>
   );
 }
-

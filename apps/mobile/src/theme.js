@@ -1,65 +1,75 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
+import AsyncStorage from './storage.js';
 
-export const darkTheme = {
-  mode: 'dark',
-  bg: '#000000',
-  surface: '#0c0c0e',
-  surfaceSubtle: '#141417',
-  card: '#18181b',
-  border: '#27272a',
-  borderSubtle: '#1f1f23',
-  text: '#ffffff',
-  textSecondary: '#a1a1aa',
-  textMuted: '#71717a',
-  userBubble: '#ffffff',
-  userText: '#000000',
-  agentBubble: '#141417',
-  agentText: '#ffffff',
-  green: '#10b981',
-  greenSurface: '#064e3b',
-  amber: '#f59e0b',
-  amberSurface: '#451a03',
-  red: '#ef4444',
-  redSurface: '#450a0a',
-  accent: '#ffffff',
-  tabBar: '#0c0c0e'
-};
+export const ACCENTS = [
+  '#7C5CFF',
+  '#4385F5',
+  '#25C9DF',
+  '#28C77B',
+  '#A4D832',
+  '#F1B83A',
+  '#F47C3C',
+  '#ED5BA6'
+];
 
-export const lightTheme = {
-  mode: 'light',
-  bg: '#ffffff',
-  surface: '#f8fafc',
-  surfaceSubtle: '#f1f5f9',
-  card: '#ffffff',
-  border: '#e2e8f0',
-  borderSubtle: '#f1f5f9',
-  text: '#09090b',
-  textSecondary: '#52525b',
-  textMuted: '#a1a1aa',
-  userBubble: '#000000',
-  userText: '#ffffff',
-  agentBubble: '#f4f4f5',
-  agentText: '#09090b',
-  green: '#059669',
-  greenSurface: '#d1fae5',
-  amber: '#d97706',
-  amberSurface: '#fef3c7',
-  red: '#dc2626',
-  redSurface: '#fee2e2',
-  accent: '#09090b',
-  tabBar: '#ffffff'
-};
+export function getDarkTheme(accent = ACCENTS[0]) {
+  return {
+    mode: 'dark',
+    bg: '#000000',
+    surface: '#0d0d0d',
+    raised: '#161616',
+    border: '#282828',
+    text: '#ffffff',
+    muted: '#8a8a8a',
+    subtle: '#5b5b5b',
+    accent,
+    danger: '#ff5d5d',
+    warning: '#f1b83a',
+    success: '#31c77a',
+    userBubble: accent,
+    userText: '#ffffff',
+    agentBubble: '#0d0d0d',
+    agentText: '#ffffff',
+    tabBar: '#161616'
+  };
+}
+
+export function getLightTheme(accent = ACCENTS[0]) {
+  return {
+    mode: 'light',
+    bg: '#ffffff',
+    surface: '#f6f6f6',
+    raised: '#ffffff',
+    border: '#e5e5e5',
+    text: '#0a0a0a',
+    muted: '#6b6b6b',
+    subtle: '#969696',
+    accent,
+    danger: '#ff5d5d',
+    warning: '#f1b83a',
+    success: '#31c77a',
+    userBubble: accent,
+    userText: '#ffffff',
+    agentBubble: '#f6f6f6',
+    agentText: '#0a0a0a',
+    tabBar: '#ffffff'
+  };
+}
 
 const ThemeContext = createContext({
-  theme: darkTheme,
+  theme: getDarkTheme(),
   isDark: true,
-  toggleTheme: () => {}
+  toggleTheme: () => {},
+  setDark: () => {},
+  accent: ACCENTS[0],
+  setAccent: () => {}
 });
 
 export function ThemeProvider({ children }) {
   const systemScheme = useColorScheme();
   const [isDark, setIsDark] = useState(true);
+  const [accent, setAccentState] = useState(ACCENTS[0]);
 
   useEffect(() => {
     if (systemScheme) {
@@ -71,10 +81,18 @@ export function ThemeProvider({ children }) {
     setIsDark((prev) => !prev);
   };
 
-  const theme = isDark ? darkTheme : lightTheme;
+  const setDark = (val) => {
+    setIsDark(Boolean(val));
+  };
+
+  const setAccent = (color) => {
+    setAccentState(color);
+  };
+
+  const theme = isDark ? getDarkTheme(accent) : getLightTheme(accent);
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, isDark, toggleTheme, setDark, accent, setAccent }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -83,4 +101,3 @@ export function ThemeProvider({ children }) {
 export function useTheme() {
   return useContext(ThemeContext);
 }
-

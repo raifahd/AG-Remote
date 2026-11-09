@@ -120,3 +120,15 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Authored comprehensive `README.md` covering architecture, Tailscale setup, launch scripts (`launch-antigravity.sh` and `launch-antigravity.ps1`), VSIX installation, and mobile pairing.
   - Added `vscode:prepublish` packaging scripts to `@ag-remote/bridge`.
   - Confirmed APK build generation deferred per explicit user request.
+
+## 2026-11-09: Mobile App UI 1:1 Companion Synchronization
+- **Exact Companion Design System Match:**
+  - Synchronized color palette with companion prototype: surface `#0d0d0d`, raised `#161616`, border `#282828`, text `#ffffff`, muted `#8a8a8a`, subtle `#5b5b5b`, danger `#ff5d5d`, warning `#f1b83a`, success `#31c77a`.
+  - Added 8 selectable accent colors (`#7C5CFF`, `#4385F5`, `#25C9DF`, `#28C77B`, `#A4D832`, `#F1B83A`, `#F47C3C`, `#ED5BA6`), defaulting to `#7C5CFF`.
+  - Re-implemented all SVG iconography (21 custom icons) via `react-native-svg` matching companion vector paths 1:1.
+  - Implemented standard floating bottom tab bar (`TabBar.js`) with 4 tabs: `Home`, `Chat`, `Workspaces`, and `Settings`.
+  - Implemented top bar (`TopBar.js`) with wordmark (`AG Remote`) on Home and eyebrow status / titles on other screens.
+  - Redesigned Home screen with status orb, animated pulse ring, blinking cursor indicator, interactive hold-to-approve card, quick prompt pill, and recent activity timeline.
+  - Redesigned Chat screen with `AG` avatar bubbles, accent user bubbles, tool step cards, code snippet cards with language badges and copy actions, and floating composer.
+  - Implemented Workspaces screen with bridge status badges, open workspace cards, dashed add button, and pairing modal.
+  - Implemented Settings screen with theme toggle, accent color swatch selector, notification/quiet-hours toggles, security links, and floating toast notifications.
