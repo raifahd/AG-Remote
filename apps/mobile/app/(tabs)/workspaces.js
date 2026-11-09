@@ -9,7 +9,8 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
-  RefreshControl
+  RefreshControl,
+  Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../../src/theme.js';
