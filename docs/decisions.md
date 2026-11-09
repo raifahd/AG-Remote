@@ -106,3 +106,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
 
 
 
+
+## 2026-11-09: Phase 7 Hardening & Security Audit
+- **Security Audit (Section 9 Compliance):**
+  - Added dedicated test suite `packages/bridge/test/securityAudit.test.ts` testing SEC-1 through SEC-12.
+  - Verified network interface isolation to Tailscale cgNAT range (`100.64.0.0/10`), rejecting 0.0.0.0.
+  - Verified 64-character random hex token enforcement and sliding-window rate limiting.
+  - Verified strict Zod payload validation rejecting extraneous or injected fields on prompts and approvals.
+  - Verified `STALE_REQUEST` and `NO_PENDING_APPROVAL` handling preventing forged or replayed actions.
+  - Verified notification payload sanitization against credential leaks.
+  - Verified owner-only file permissions (`0o600`) on fallback secret files on Unix hosts.
+- **Release Documentation & Packaging:**
+  - Authored comprehensive `README.md` covering architecture, Tailscale setup, launch scripts (`launch-antigravity.sh` and `launch-antigravity.ps1`), VSIX installation, and mobile pairing.
+  - Added `vscode:prepublish` packaging scripts to `@ag-remote/bridge`.
+  - Confirmed APK build generation deferred per explicit user request.

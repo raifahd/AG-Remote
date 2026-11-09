@@ -10,6 +10,7 @@
   "main": "./dist/extension.js",
   "types": "./dist/extension.d.ts",
   "scripts": {
+    "vscode:prepublish": "tsc",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "echo bridge-lint-ok"
