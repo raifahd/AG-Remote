@@ -159,6 +159,34 @@ export function renderWebClientHtml(): string {
     .icon-btn:active {
       transform: scale(0.94);
     }
+    .system-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      font-size: 12px;
+      font-weight: 600;
+      animation: slideDown 0.2s ease;
+      flex-shrink: 0;
+      z-index: 18;
+      border-bottom: 1px solid var(--border);
+      box-sizing: border-box;
+      width: 100%;
+    }
+    .banner-degraded {
+      background: rgba(245, 158, 11, 0.12);
+      color: var(--amber);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .banner-offline {
+      background: rgba(239, 68, 68, 0.12);
+      color: var(--red);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .banner-icon {
+      font-size: 14px;
+      flex-shrink: 0;
+    }
     #mainContent {
       flex: 1;
       display: flex;
@@ -253,6 +281,7 @@ export function renderWebClientHtml(): string {
       max-width: 720px;
       margin: 0 auto;
       box-sizing: border-box;
+      scroll-behavior: smooth;
     }
     .message-row {
       display: flex;
@@ -514,7 +543,7 @@ export function renderWebClientHtml(): string {
       border: 1px solid var(--border);
       border-radius: 18px;
       padding: 24px;
-      max-width: 420px;
+      max-width: 440px;
       width: 100%;
       box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     }
@@ -540,6 +569,23 @@ export function renderWebClientHtml(): string {
       border-radius: 10px;
       font-size: 13px;
       outline: none;
+    }
+    .field-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 16px 0 8px 0;
+    }
+    .switch-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .time-inputs {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 8px;
     }
     .modal-actions {
       display: flex;
@@ -592,6 +638,15 @@ export function renderWebClientHtml(): string {
     </div>
   </header>
 
+  <div id="degradedBanner" class="system-banner banner-degraded" style="display:none;">
+    <span class="banner-icon">⚠</span>
+    <span id="degradedText">Bridge running in degraded mode</span>
+  </div>
+  <div id="offlineBanner" class="system-banner banner-offline" style="display:none;">
+    <span class="banner-icon">⚡</span>
+    <span>Disconnected from bridge. Reconnecting...</span>
+  </div>
+
   <div id="mainContent">
     <div id="approvalCard">
       <div class="approval-header">
@@ -643,9 +698,25 @@ export function renderWebClientHtml(): string {
       <div class="modal-title">Bridge Configuration</div>
       <div class="field-label">Bearer Token</div>
       <input id="tokenInput" class="field-input" type="password" placeholder="64-character hex secret">
+
+      <div class="field-row">
+        <label class="switch-label" for="quietHoursToggle">Quiet Hours (Mute Run Finished alerts)</label>
+        <input id="quietHoursToggle" type="checkbox" style="width: 18px; height: 18px; cursor: pointer;">
+      </div>
+      <div id="quietHoursInputs" class="time-inputs" style="display: none;">
+        <div style="flex: 1;">
+          <div class="field-label">Start Hour (0-23)</div>
+          <input id="quietStartInput" class="field-input" type="number" min="0" max="23" value="23">
+        </div>
+        <div style="flex: 1;">
+          <div class="field-label">End Hour (0-23)</div>
+          <input id="quietEndInput" class="field-input" type="number" min="0" max="23" value="7">
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button id="btnModalCancel" class="btn-modal-cancel">Cancel</button>
-        <button id="btnModalSave" class="btn-modal-save">Save Token</button>
+        <button id="btnModalSave" class="btn-modal-save">Save Settings</button>
       </div>
     </div>
   </div>
@@ -675,9 +746,18 @@ export function renderWebClientHtml(): string {
 
     const settingsModal = document.getElementById('settingsModal');
     const tokenInput = document.getElementById('tokenInput');
+    const quietToggle = document.getElementById('quietHoursToggle');
+    const quietInputs = document.getElementById('quietHoursInputs');
+    const quietStart = document.getElementById('quietStartInput');
+    const quietEnd = document.getElementById('quietEndInput');
+
+    quietToggle.addEventListener('change', () => {
+      quietInputs.style.display = quietToggle.checked ? 'flex' : 'none';
+    });
 
     document.getElementById('settingsBtn').addEventListener('click', () => {
       tokenInput.value = token;
+      loadQuietHours();
       settingsModal.style.display = 'flex';
     });
 
@@ -685,14 +765,49 @@ export function renderWebClientHtml(): string {
       settingsModal.style.display = 'none';
     });
 
-    document.getElementById('btnModalSave').addEventListener('click', () => {
+    document.getElementById('btnModalSave').addEventListener('click', async () => {
       token = tokenInput.value.trim();
       localStorage.setItem('ag_remote_token', token);
+
+      const qhPayload = {
+        enabled: quietToggle.checked,
+        startHour: parseInt(quietStart.value, 10) || 23,
+        endHour: parseInt(quietEnd.value, 10) || 7
+      };
+      await apiCall('/v1/settings', 'POST', qhPayload);
+
       settingsModal.style.display = 'none';
+      checkDegradedStatus();
       refreshState();
       refreshMessages();
       initWebSocket();
     });
+
+    async function loadQuietHours() {
+      const res = await apiCall('/v1/settings');
+      if (res && res.quietHours) {
+        quietToggle.checked = Boolean(res.quietHours.enabled);
+        quietStart.value = res.quietHours.startHour ?? 23;
+        quietEnd.value = res.quietHours.endHour ?? 7;
+        quietInputs.style.display = quietToggle.checked ? 'flex' : 'none';
+      }
+    }
+
+    async function checkDegradedStatus() {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          const health = await res.json();
+          const degradedBanner = document.getElementById('degradedBanner');
+          if (health && health.status === 'degraded') {
+            degradedBanner.style.display = 'flex';
+            document.getElementById('degradedText').textContent = health.degradedReason || 'Bridge running in degraded fallback mode';
+          } else {
+            degradedBanner.style.display = 'none';
+          }
+        }
+      } catch {}
+    }
 
     async function apiCall(endpoint, method, body) {
       if (!token) {
@@ -768,6 +883,8 @@ export function renderWebClientHtml(): string {
       if (!Array.isArray(messages)) return;
 
       const container = document.getElementById('messagesContainer');
+      const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 80;
+
       if (messages.length === 0 && latestStatus !== 'generating') {
         container.innerHTML = '<div class="empty-state">' +
           '<div class="empty-icon-wrap">' +
@@ -805,7 +922,9 @@ export function renderWebClientHtml(): string {
       }
 
       container.innerHTML = html;
-      container.scrollTop = container.scrollHeight;
+      if (wasAtBottom || latestStatus === 'generating') {
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }
     }
 
     function escapeHtml(text) {
@@ -904,12 +1023,21 @@ export function renderWebClientHtml(): string {
       const wsUrl = proto + '//' + window.location.host + '/v1/stream?token=' + encodeURIComponent(token);
       ws = new WebSocket(wsUrl);
 
+      ws.onopen = () => {
+        document.getElementById('offlineBanner').style.display = 'none';
+      };
+
       ws.onmessage = () => {
         refreshState();
         refreshMessages();
       };
 
+      ws.onerror = () => {
+        document.getElementById('offlineBanner').style.display = 'flex';
+      };
+
       ws.onclose = () => {
+        document.getElementById('offlineBanner').style.display = 'flex';
         setTimeout(initWebSocket, 3000);
       };
     }
@@ -917,6 +1045,7 @@ export function renderWebClientHtml(): string {
     if (!token) {
       settingsModal.style.display = 'flex';
     } else {
+      checkDegradedStatus();
       refreshState();
       refreshMessages();
       initWebSocket();

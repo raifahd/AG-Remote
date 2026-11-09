@@ -69,12 +69,21 @@ export const RejectRequestSchema = z.object({
 
 export const HealthResponseSchema = z.object({
   status: z.enum(['ok', 'degraded']),
+  degradedReason: z.string().optional(),
   version: z.string(),
   adapterMode: z.enum(['sdk', 'cdp', 'fake']),
   hostOs: z.string(),
   hostname: z.string(),
   tailscaleIp: z.string().nullable()
 }).strict();
+
+export const QuietHoursSettingsSchema = z.object({
+  enabled: z.boolean(),
+  startHour: z.number().int().min(0).max(23),
+  endHour: z.number().int().min(0).max(23)
+}).strict();
+
+export type QuietHoursSettings = z.infer<typeof QuietHoursSettingsSchema>;
 
 export const StatusChangedEventSchema = z.object({
   type: z.literal('status_changed'),

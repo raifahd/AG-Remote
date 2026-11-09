@@ -101,5 +101,27 @@ describe('NtfyNotifier', () => {
     expect(appResult).toBe(true);
     expect(receivedRequests).toHaveLength(1);
   });
+
+  it('gets and updates quiet hours configuration', () => {
+    const store = new FileSecretStore(tokenFile);
+    const notifier = new NtfyNotifier(store, {
+      quietHoursEnabled: false,
+      quietHoursStart: 23,
+      quietHoursEnd: 7
+    });
+
+    expect(notifier.getQuietHours()).toEqual({
+      enabled: false,
+      startHour: 23,
+      endHour: 7
+    });
+
+    notifier.setQuietHours(true, 21, 6);
+    expect(notifier.getQuietHours()).toEqual({
+      enabled: true,
+      startHour: 21,
+      endHour: 6
+    });
+  });
 });
 

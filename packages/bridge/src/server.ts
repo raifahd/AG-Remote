@@ -7,6 +7,7 @@ import {
   PromptRequestSchema,
   ApproveRequestSchema,
   RejectRequestSchema,
+  QuietHoursSettingsSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -163,6 +164,24 @@ export class BridgeServer {
       res.json({ ok });
     });
 
+    v1Router.get('/settings', (_req: Request, res: Response) => {
+      const qh = this.notifier ? this.notifier.getQuietHours() : { enabled: false, startHour: 23, endHour: 7 };
+      res.json({ quietHours: qh });
+    });
+
+    v1Router.post('/settings', (req: Request, res: Response) => {
+      const payload = req.body?.quietHours ?? req.body;
+      const parsed = QuietHoursSettingsSchema.safeParse(payload);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      if (this.notifier) {
+        this.notifier.setQuietHours(parsed.data.enabled, parsed.data.startHour, parsed.data.endHour);
+      }
+      res.json({ ok: true, quietHours: parsed.data });
+    });
+
     this.app.use('/v1', v1Router);
 
     this.app.use((_req: Request, res: Response) => {
@@ -201,8 +220,19 @@ export class BridgeServer {
   }
 
   private buildHealthResponse(): HealthResponse {
+    const isFallback = this.tokenManager.getIsFallback();
+    const isCdpDegraded = this.config.adapterMode === 'cdp';
+    const isDegraded = isFallback || isCdpDegraded;
+    let degradedReason: string | undefined;
+    if (isFallback) {
+      degradedReason = 'Running with insecure fallback token storage';
+    } else if (isCdpDegraded) {
+      degradedReason = 'IDE started without debug port';
+    }
+
     return {
-      status: this.tokenManager.getIsFallback() ? 'degraded' : 'ok',
+      status: isDegraded ? 'degraded' : 'ok',
+      degradedReason,
       version: this.config.version,
       adapterMode: this.config.adapterMode,
       hostOs: os.platform(),

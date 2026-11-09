@@ -33,9 +33,11 @@ import {
   saveProfile,
   deleteProfile,
   getActiveProfile,
-  setActiveProfileId
+  setActiveProfileId,
+  getQuietHoursSettings,
+  saveQuietHoursSettings
 } from '../../src/storage.js';
-import { checkHealth, probeAllProfiles } from '../../src/api.js';
+import { checkHealth, probeAllProfiles, updateSettings } from '../../src/api.js';
 
 export default function BridgesScreen() {
   const router = useRouter();
@@ -52,12 +54,15 @@ export default function BridgesScreen() {
   const [baseUrl, setBaseUrl] = useState('');
   const [token, setToken] = useState('');
   const [ntfyTopic, setNtfyTopic] = useState('');
+  const [quietHours, setQuietHours] = useState({ enabled: false, startHour: 23, endHour: 7 });
 
   const loadData = useCallback(async () => {
     const list = await getProfiles();
     const active = await getActiveProfile();
+    const qh = await getQuietHoursSettings();
     setProfiles(list);
     setActiveProfileState(active);
+    setQuietHours(qh);
 
     if (list.length > 0) {
       setIsProbing(true);
@@ -70,6 +75,17 @@ export default function BridgesScreen() {
       setIsProbing(false);
     }
   }, []);
+
+  const handleToggleQuietHours = async () => {
+    const updated = { ...quietHours, enabled: !quietHours.enabled };
+    setQuietHours(updated);
+    await saveQuietHoursSettings(updated);
+    if (activeProfile) {
+      try {
+        await updateSettings(activeProfile, updated);
+      } catch {}
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -336,6 +352,40 @@ export default function BridgesScreen() {
           >
             <Text style={[styles.toggleBtnText, { color: theme.text }]}>
               Switch to {isDark ? 'Light' : 'Dark'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={[styles.sectionHeader, { marginTop: 28 }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textSecondary }]}>
+          NOTIFICATIONS & QUIET HOURS
+        </Text>
+      </View>
+
+      <View style={[styles.settingCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <HugeiconsIcon
+              icon={Notification03Icon}
+              size={22}
+              color={theme.text}
+            />
+            <View style={{ marginLeft: 12, flex: 1 }}>
+              <Text style={[styles.settingLabel, { color: theme.text }]}>Quiet Hours</Text>
+              <Text style={[styles.settingSub, { color: theme.textSecondary }]}>
+                {quietHours.enabled
+                  ? `Mutes non-urgent alerts from ${quietHours.startHour}:00 to 0${quietHours.endHour}:00`
+                  : 'Disabled (All notifications delivered)'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.toggleBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+            onPress={handleToggleQuietHours}
+          >
+            <Text style={[styles.toggleBtnText, { color: theme.text }]}>
+              {quietHours.enabled ? 'Turn Off' : 'Turn On'}
             </Text>
           </TouchableOpacity>
         </View>

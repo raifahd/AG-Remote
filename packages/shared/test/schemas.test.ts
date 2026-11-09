@@ -3,7 +3,8 @@ import {
   PromptRequestSchema,
   ApproveRequestSchema,
   HealthResponseSchema,
-  AgentEventSchema
+  AgentEventSchema,
+  QuietHoursSettingsSchema
 } from '../src/schemas.js';
 
 describe('Shared Schemas', () => {
@@ -35,6 +36,35 @@ describe('Shared Schemas', () => {
     expect(HealthResponseSchema.parse(valid)).toEqual(valid);
   });
 
+  it('validates health response with degraded reason', () => {
+    const valid = {
+      status: 'degraded' as const,
+      degradedReason: 'Running without debug port',
+      version: '0.1.0',
+      adapterMode: 'fake' as const,
+      hostOs: 'linux',
+      hostname: 'test-host',
+      tailscaleIp: '100.69.62.84'
+    };
+    expect(HealthResponseSchema.parse(valid)).toEqual(valid);
+  });
+
+  it('validates quiet hours settings schema', () => {
+    const valid = {
+      enabled: true,
+      startHour: 22,
+      endHour: 7
+    };
+    expect(QuietHoursSettingsSchema.parse(valid)).toEqual(valid);
+
+    const invalidHour = {
+      enabled: true,
+      startHour: 25,
+      endHour: 7
+    };
+    expect(() => QuietHoursSettingsSchema.parse(invalidHour)).toThrow();
+  });
+
   it('validates agent events via discriminated union', () => {
     const event = {
       type: 'run_finished' as const,
@@ -50,4 +80,3 @@ describe('Shared Schemas', () => {
     expect(() => AgentEventSchema.parse(invalid)).toThrow();
   });
 });
-

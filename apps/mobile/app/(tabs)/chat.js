@@ -126,6 +126,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [agentStatus, setAgentStatus] = useState('idle');
+  const [wsConnected, setWsConnected] = useState(true);
   const flatListRef = useRef(null);
 
   const loadMessages = useCallback(async () => {
@@ -168,6 +169,9 @@ export default function ChatScreen() {
         if (event.type === 'message_appended' || event.type === 'run_finished') {
           loadMessages();
         }
+      },
+      (connected) => {
+        setWsConnected(connected);
       }
     );
     return () => ws.close();
@@ -251,6 +255,11 @@ export default function ChatScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      {!wsConnected && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineBannerText}>Reconnecting to bridge...</Text>
+        </View>
+      )}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color={theme.text} size="large" />
@@ -338,6 +347,20 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1
+  },
+  offlineBanner: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(239, 68, 68, 0.3)'
+  },
+  offlineBannerText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#ef4444'
   },
   center: {
     flex: 1,

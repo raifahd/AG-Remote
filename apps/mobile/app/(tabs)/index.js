@@ -19,7 +19,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { useTheme } from '../../src/theme.js';
 import { getActiveProfile } from '../../src/storage.js';
-import { fetchState, sendApprove, sendReject, sendStop } from '../../src/api.js';
+import { fetchState, checkHealth, sendApprove, sendReject, sendStop } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
 export default function HomeScreen() {
@@ -30,14 +30,23 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
+  const [degradedInfo, setDegradedInfo] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
       const active = await getActiveProfile();
       setProfile(active);
       if (active) {
-        const s = await fetchState(active);
+        const [s, h] = await Promise.all([
+          fetchState(active),
+          checkHealth(active.baseUrl).catch(() => null)
+        ]);
         setState(s);
+        if (h && h.health && h.health.status === 'degraded') {
+          setDegradedInfo(h.health.degradedReason || 'Bridge running in degraded mode');
+        } else {
+          setDegradedInfo(null);
+        }
       }
     } catch {
       // transient fetch failure
@@ -169,6 +178,15 @@ export default function HomeScreen() {
           </View>
         </View>
       </View>
+
+      {degradedInfo && (
+        <View style={[styles.degradedBanner, { borderColor: theme.amber }]}>
+          <HugeiconsIcon icon={Alert02Icon} size={18} color={theme.amber} />
+          <Text style={[styles.degradedBannerText, { color: theme.amber }]}>
+            {degradedInfo}
+          </Text>
+        </View>
+      )}
 
       <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>AGENT STATUS</Text>
@@ -371,6 +389,21 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1
+  },
+  degradedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    backgroundColor: 'rgba(245, 158, 11, 0.08)'
+  },
+  degradedBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1
   },
   stopButtonText: {
     fontWeight: '700',

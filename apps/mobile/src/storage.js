@@ -91,3 +91,21 @@ export async function getActiveProfile() {
   return list[0];
 }
 
+const QUIET_HOURS_KEY = 'ag_remote_quiet_hours_v1';
+
+export async function getQuietHoursSettings() {
+  try {
+    const raw = await getItem(QUIET_HOURS_KEY);
+    if (!raw) {
+      return { enabled: false, startHour: 23, endHour: 7 };
+    }
+    return JSON.parse(raw);
+  } catch {
+    return { enabled: false, startHour: 23, endHour: 7 };
+  }
+}
+
+export async function saveQuietHoursSettings(settings) {
+  await setItem(QUIET_HOURS_KEY, JSON.stringify(settings));
+}
+

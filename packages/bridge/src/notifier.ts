@@ -85,6 +85,14 @@ export class NtfyNotifier {
     this.quietHoursEnd = end;
   }
 
+  getQuietHours(): { enabled: boolean; startHour: number; endHour: number } {
+    return {
+      enabled: this.quietHoursEnabled,
+      startHour: this.quietHoursStart,
+      endHour: this.quietHoursEnd
+    };
+  }
+
   isQuietHours(now = new Date()): boolean {
     if (!this.quietHoursEnabled) {
       return false;

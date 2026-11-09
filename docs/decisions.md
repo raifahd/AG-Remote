@@ -92,4 +92,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Designed vector SVG AG Remote logo badge in header, chat placeholder, and agent messages.
   - Implemented live in-chat working indicator bubble ("Antigravity is working...") with animated pulsing green indicator when agent state is `generating`.
 
+## 2026-11-09: Phase 6 Live Chat, Degraded Banners & Quiet Hours
+- **Degraded State & Error Banners (FR-20):**
+  - Added `degradedReason` to `HealthResponseSchema` and `buildHealthResponse()`.
+  - When token fallback mode is active or when the IDE is running without the debug port in CDP mode, `/health` reports `status: "degraded"` with a specific explanatory reason.
+  - Rendered dismissible/persistent system banners (`#degradedBanner` and `#offlineBanner`) in both the web client (`webApp.ts`) and the Expo mobile app (`(tabs)/index.js` and `(tabs)/chat.js`).
+- **Live Chat Auto-Scroll Polish (FR-16):**
+  - Enhanced message containers in web and mobile to automatically track user scroll position: automatically smooth-scrolls to the latest message while keeping scroll position intact if the user actively scrolled up to view message history.
+- **Quiet Hours Configuration (FR-22):**
+  - Defined `QuietHoursSettingsSchema` in `@ag-remote/shared`.
+  - Added `GET /v1/settings` and `POST /v1/settings` endpoints on the bridge to query and update quiet hours schedules on `NtfyNotifier`.
+  - Integrated quiet hours settings into the web client Settings modal and the mobile app Bridges tab with persistent local storage and live bridge synchronization.
+
+
 

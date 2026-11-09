@@ -141,5 +141,29 @@ describe('BridgeServer integration', () => {
     expect(approveRes.status).toBe(200);
     expect(approveRes.data.ok).toBe(true);
   });
+
+  it('gets and updates quiet hours settings at /v1/settings', async () => {
+    const getRes = await request('GET', '/v1/settings', validToken);
+    expect(getRes.status).toBe(200);
+    expect(getRes.data.quietHours).toBeDefined();
+
+    const postRes = await request('POST', '/v1/settings', validToken, {
+      enabled: true,
+      startHour: 22,
+      endHour: 8
+    });
+    expect(postRes.status).toBe(200);
+    expect(postRes.data.ok).toBe(true);
+    expect(postRes.data.quietHours.enabled).toBe(true);
+    expect(postRes.data.quietHours.startHour).toBe(22);
+    expect(postRes.data.quietHours.endHour).toBe(8);
+
+    const invalidRes = await request('POST', '/v1/settings', validToken, {
+      enabled: true,
+      startHour: 99
+    });
+    expect(invalidRes.status).toBe(400);
+    expect(invalidRes.data.code).toBe('INVALID_BODY');
+  });
 });
 

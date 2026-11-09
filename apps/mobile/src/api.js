@@ -77,6 +77,14 @@ export async function sendStop(profile) {
   return authenticatedRequest(profile, '/v1/stop', 'POST');
 }
 
+export async function fetchSettings(profile) {
+  return authenticatedRequest(profile, '/v1/settings', 'GET');
+}
+
+export async function updateSettings(profile, settings) {
+  return authenticatedRequest(profile, '/v1/settings', 'POST', settings);
+}
+
 async function authenticatedRequest(profile, pathname, method, body = null) {
   if (!profile || !profile.baseUrl || !profile.token) {
     throw new Error('Profile missing or incomplete');
