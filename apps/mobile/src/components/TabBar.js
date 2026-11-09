@@ -1,53 +1,34 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useNavigation } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '../theme.js';
 import Icon from './Icon.js';
+
+const TABS = [
+  { name: 'index', label: 'Home', icon: 'home', path: '/(tabs)' },
+  { name: 'chat', label: 'Chat', icon: 'chat', path: '/(tabs)/chat' },
+  { name: 'workspaces', label: 'Workspaces', icon: 'grid', path: '/(tabs)/workspaces' },
+  { name: 'settings', label: 'Settings', icon: 'settings', path: '/(tabs)/settings' }
+];
 
 export default function TabBar(props) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const router = useRouter();
-
-  let contextNav = null;
-  try {
-    contextNav = useNavigation();
-  } catch {}
-
-  const nav = props.navigation || contextNav;
-  const state = props.state;
-  const descriptors = props.descriptors;
-
-  const getRouteInfo = (routeName) => {
-    switch (routeName) {
-      case 'index':
-        return { label: 'Home', icon: 'home' };
-      case 'chat':
-        return { label: 'Chat', icon: 'chat' };
-      case 'workspaces':
-      case 'bridges':
-        return { label: 'Workspaces', icon: 'grid' };
-      case 'settings':
-        return { label: 'Settings', icon: 'settings' };
-      default:
-        return { label: routeName, icon: 'home' };
-    }
-  };
-
-  const routes = state?.routes?.filter((route) => {
-    if (descriptors && descriptors[route.key]?.options?.href === null) {
-      return false;
-    }
-    return ['index', 'chat', 'workspaces', 'settings'].includes(route.name);
-  }) || [
-    { key: 'index', name: 'index' },
-    { key: 'chat', name: 'chat' },
-    { key: 'workspaces', name: 'workspaces' },
-    { key: 'settings', name: 'settings' }
-  ];
+  const pathname = usePathname() || '/';
 
   const bottomMargin = Math.max(insets.bottom, 14);
+
+  const getIsFocused = (tabName) => {
+    if (props.state?.index !== undefined && props.state.routes?.[props.state.index]) {
+      return props.state.routes[props.state.index].name === tabName;
+    }
+    if (tabName === 'index') {
+      return pathname === '/' || pathname === '/(tabs)' || pathname === '/index';
+    }
+    return pathname.includes(tabName);
+  };
 
   return (
     <View
@@ -68,34 +49,15 @@ export default function TabBar(props) {
           }
         ]}
       >
-        {routes.map((route, index) => {
-          const currentRouteName = state?.routes?.[state?.index]?.name;
-          const isFocused = currentRouteName
-            ? currentRouteName === route.name
-            : index === 0;
-
-          const { label, icon } = getRouteInfo(route.name);
+        {TABS.map((tab) => {
+          const isFocused = getIsFocused(tab.name);
 
           const onPress = () => {
-            if (nav && typeof nav.emit === 'function') {
-              const event = nav.emit({
-                type: 'tabPress',
-                target: route.key,
-                canPreventDefault: true
-              });
-              if (event?.defaultPrevented) {
-                return;
-              }
-            }
-
-            if (!isFocused) {
-              if (nav && typeof nav.navigate === 'function') {
-                nav.navigate(route.name);
-              } else if (typeof router.navigate === 'function') {
-                router.navigate(route.name === 'index' ? '/' : `/(tabs)/${route.name}`);
-              } else {
-                router.push(route.name === 'index' ? '/' : `/(tabs)/${route.name}`);
-              }
+            if (isFocused) return;
+            if (typeof router.navigate === 'function') {
+              router.navigate(tab.path);
+            } else {
+              router.push(tab.path);
             }
           };
 
@@ -105,7 +67,7 @@ export default function TabBar(props) {
 
           return (
             <TouchableOpacity
-              key={route.key}
+              key={tab.name}
               onPress={onPress}
               style={[
                 styles.tabButton,
@@ -114,7 +76,7 @@ export default function TabBar(props) {
               activeOpacity={0.8}
             >
               <View style={styles.iconContainer}>
-                <Icon name={icon} size={20} color={isFocused ? activeColor : inactiveColor} />
+                <Icon name={tab.icon} size={20} color={isFocused ? activeColor : inactiveColor} />
               </View>
               <Text
                 style={[
@@ -122,7 +84,7 @@ export default function TabBar(props) {
                   { color: isFocused ? activeColor : inactiveColor }
                 ]}
               >
-                {label}
+                {tab.label}
               </Text>
             </TouchableOpacity>
           );

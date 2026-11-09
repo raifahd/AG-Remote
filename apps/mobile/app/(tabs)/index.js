@@ -156,7 +156,7 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
-      <TopBar onBellPress={() => router.push('/settings')} />
+      <TopBar onBellPress={() => router.navigate('/(tabs)/settings')} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -172,7 +172,7 @@ export default function HomeScreen() {
       >
         <TouchableOpacity
           style={[styles.connectionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          onPress={() => router.push('/workspaces')}
+          onPress={() => router.navigate('/(tabs)/workspaces')}
           activeOpacity={0.8}
         >
           <View style={styles.machine}>
@@ -304,7 +304,7 @@ export default function HomeScreen() {
 
         <TouchableOpacity
           style={[styles.quickPromptCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-          onPress={() => router.push('/chat')}
+          onPress={() => router.navigate('/(tabs)/chat')}
           activeOpacity={0.8}
         >
           <View style={[styles.plusIconWrap, { backgroundColor: theme.raised }]}>
@@ -321,7 +321,7 @@ export default function HomeScreen() {
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent activity</Text>
             <TouchableOpacity
               style={styles.viewAllButton}
-              onPress={() => router.push('/chat')}
+              onPress={() => router.navigate('/(tabs)/chat')}
             >
               <Text style={[styles.viewAllText, { color: theme.accent }]}>View all</Text>
               <Icon name="arrow" size={16} color={theme.accent} />
@@ -334,7 +334,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   key={`act-${idx}`}
                   style={[styles.timelineItem, { borderBottomColor: theme.border }]}
-                  onPress={() => router.push('/chat')}
+                  onPress={() => router.navigate('/(tabs)/chat')}
                   activeOpacity={0.7}
                 >
                   <View

@@ -225,7 +225,7 @@ export default function WorkspacesScreen() {
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Open workspaces</Text>
             <TouchableOpacity
               style={styles.headingAction}
-              onPress={() => router.push('/chat')}
+              onPress={() => router.navigate('/(tabs)/chat')}
             >
               <Text style={[styles.headingActionText, { color: theme.accent }]}>See all</Text>
               <Icon name="arrow" size={16} color={theme.accent} />
@@ -234,7 +234,7 @@ export default function WorkspacesScreen() {
 
           <TouchableOpacity
             style={[styles.workspaceCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => router.push('/chat')}
+            onPress={() => router.navigate('/(tabs)/chat')}
             activeOpacity={0.8}
           >
             <View style={[styles.workspaceMark, { backgroundColor: theme.accent }]}>
@@ -589,3 +589,4 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   }
 });
+
