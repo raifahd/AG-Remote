@@ -148,3 +148,4 @@ export default function Icon({ name, size = 21, color = 'currentColor' }) {
     </Svg>
   );
 }
+
