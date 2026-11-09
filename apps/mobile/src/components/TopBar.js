@@ -1,8 +1,29 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme.js';
 import Icon from './Icon.js';
+
+const fontBold = Platform.select({
+  ios: 'Poppins-Bold',
+  android: 'Poppins_700Bold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontRegular = Platform.select({
+  ios: 'Poppins-Regular',
+  android: 'Poppins_400Regular',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
 
 export default function TopBar({ title, status, onBellPress }) {
   const insets = useSafeAreaInsets();
@@ -71,25 +92,25 @@ const styles = StyleSheet.create({
   },
   wordmarkBold: {
     fontSize: 21,
-    fontWeight: '700',
+    fontFamily: fontBold,
     letterSpacing: -1
   },
   wordmarkLight: {
     fontSize: 21,
-    fontWeight: '400',
+    fontFamily: fontRegular,
     marginLeft: 3,
     letterSpacing: -1
   },
   eyebrow: {
     fontSize: 10,
     letterSpacing: 1.2,
-    fontWeight: '600',
+    fontFamily: fontSemiBold,
     marginBottom: 2,
     textTransform: 'uppercase'
   },
   heading: {
     fontSize: 18,
-    fontWeight: '700',
+    fontFamily: fontBold,
     letterSpacing: -0.5
   },
   iconButton: {
@@ -101,4 +122,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   }
 });
-

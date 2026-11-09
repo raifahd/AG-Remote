@@ -386,6 +386,27 @@ export default function HomeScreen() {
   );
 }
 
+const fontRegular = Platform.select({
+  ios: 'Poppins-Regular',
+  android: 'Poppins_400Regular',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontBold = Platform.select({
+  ios: 'Poppins-Bold',
+  android: 'Poppins_700Bold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   root: {
     flex: 1
@@ -424,16 +445,17 @@ const styles = StyleSheet.create({
   connectedEyebrow: {
     fontSize: 9,
     letterSpacing: 0.9,
-    fontWeight: '600',
+    fontFamily: fontSemiBold,
     marginBottom: 1
   },
   machineName: {
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: fontBold,
     lineHeight: 18
   },
   machineOs: {
     fontSize: 11,
+    fontFamily: fontRegular,
     marginTop: 1
   },
   agentState: {
@@ -475,7 +497,7 @@ const styles = StyleSheet.create({
   agentEyebrow: {
     fontSize: 10,
     letterSpacing: 1.2,
-    fontWeight: '600',
+    fontFamily: fontSemiBold,
     marginBottom: 2
   },
   agentHeadingRow: {
@@ -485,16 +507,17 @@ const styles = StyleSheet.create({
   },
   agentHeading: {
     fontSize: 30,
-    fontWeight: '700',
+    fontFamily: fontBold,
     letterSpacing: -1.2,
     lineHeight: 36
   },
   blinker: {
     fontSize: 26,
-    fontWeight: '700'
+    fontFamily: fontBold
   },
   agentDesc: {
     fontSize: 12,
+    fontFamily: fontRegular,
     marginTop: 3
   },
   approvalCard: {
@@ -522,12 +545,13 @@ const styles = StyleSheet.create({
   approvalTitle: {
     fontSize: 17,
     letterSpacing: -0.4,
-    fontWeight: '700',
+    fontFamily: fontBold,
     marginTop: 12,
     marginBottom: 2
   },
   approvalDesc: {
     fontSize: 12,
+    fontFamily: fontRegular,
     marginBottom: 11
   },
   codeWrap: {
@@ -561,7 +585,7 @@ const styles = StyleSheet.create({
   primaryButtonText: {
     color: '#ffffff',
     fontSize: 12,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   },
   secondaryButton: {
     flex: 1,
@@ -575,7 +599,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     fontSize: 12,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   },
   quickPromptCard: {
     height: 56,
@@ -596,7 +620,8 @@ const styles = StyleSheet.create({
   },
   quickPromptPlaceholder: {
     flex: 1,
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: fontRegular
   },
   shortcutText: {
     fontSize: 10,
@@ -616,7 +641,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     letterSpacing: -0.4,
-    fontWeight: '700'
+    fontFamily: fontBold
   },
   viewAllButton: {
     flexDirection: 'row',
@@ -625,7 +650,7 @@ const styles = StyleSheet.create({
   },
   viewAllText: {
     fontSize: 11,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   },
   timeline: {
     borderTopWidth: 1
@@ -650,10 +675,11 @@ const styles = StyleSheet.create({
   },
   timelineTitle: {
     fontSize: 12,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   },
   timelineDesc: {
     fontSize: 11,
+    fontFamily: fontRegular,
     marginTop: 2
   }
 });

@@ -306,6 +306,27 @@ export default function SettingsScreen() {
   );
 }
 
+const fontRegular = Platform.select({
+  ios: 'Poppins-Regular',
+  android: 'Poppins_400Regular',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontBold = Platform.select({
+  ios: 'Poppins-Bold',
+  android: 'Poppins_700Bold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   root: {
     flex: 1
@@ -321,7 +342,7 @@ const styles = StyleSheet.create({
   groupLabel: {
     fontSize: 10,
     letterSpacing: 1.2,
-    fontWeight: '600',
+    fontFamily: fontSemiBold,
     marginBottom: 7,
     marginLeft: 2
   },
@@ -358,10 +379,11 @@ const styles = StyleSheet.create({
   },
   settingTitle: {
     fontSize: 12,
-    fontWeight: '700'
+    fontFamily: fontBold
   },
   settingDetail: {
     fontSize: 11,
+    fontFamily: fontRegular,
     marginTop: 2
   },
   segmented: {
@@ -392,7 +414,7 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     fontSize: 10,
-    fontWeight: '500'
+    fontFamily: fontRegular
   },
   swatches: {
     flexDirection: 'row',

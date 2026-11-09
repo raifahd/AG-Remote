@@ -382,6 +382,27 @@ export default function WorkspacesScreen() {
   );
 }
 
+const fontRegular = Platform.select({
+  ios: 'Poppins-Regular',
+  android: 'Poppins_400Regular',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontBold = Platform.select({
+  ios: 'Poppins-Bold',
+  android: 'Poppins_700Bold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   root: {
     flex: 1
@@ -404,7 +425,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     letterSpacing: -0.4,
-    fontWeight: '700'
+    fontFamily: fontBold
   },
   headingAction: {
     flexDirection: 'row',
@@ -413,7 +434,7 @@ const styles = StyleSheet.create({
   },
   headingActionText: {
     fontSize: 11,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   },
   emptyCard: {
     padding: 20,
@@ -422,7 +443,8 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   emptyText: {
-    fontSize: 12
+    fontSize: 12,
+    fontFamily: fontRegular
   },
   bridgeCard: {
     minHeight: 66,
@@ -460,7 +482,7 @@ const styles = StyleSheet.create({
   },
   workspaceMarkText: {
     color: '#ffffff',
-    fontWeight: '700',
+    fontFamily: fontBold,
     fontSize: 16
   },
   cardInfo: {
@@ -468,11 +490,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: fontBold,
     lineHeight: 18
   },
   cardDetail: {
     fontSize: 11,
+    fontFamily: fontRegular,
     marginTop: 2
   },
   subStatusRow: {

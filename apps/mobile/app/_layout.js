@@ -2,10 +2,24 @@ import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold
+} from '@expo-google-fonts/poppins';
 import { ThemeProvider, useTheme } from '../src/theme.js';
 
 function RootLayoutNav() {
   const { theme, isDark } = useTheme();
+
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold
+  });
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {

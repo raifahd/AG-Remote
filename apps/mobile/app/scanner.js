@@ -163,6 +163,27 @@ export default function ScannerScreen() {
   );
 }
 
+const fontRegular = Platform.select({
+  ios: 'Poppins-Regular',
+  android: 'Poppins_400Regular',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontBold = Platform.select({
+  ios: 'Poppins-Bold',
+  android: 'Poppins_700Bold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

@@ -94,6 +94,13 @@ export default function TabBar(props) {
   );
 }
 
+const fontMedium = Platform.select({
+  ios: 'Poppins-Medium',
+  android: 'Poppins_500Medium',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   outerContainer: {
     position: 'absolute',
@@ -140,6 +147,6 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 9,
-    fontWeight: '500'
+    fontFamily: fontMedium
   }
 });

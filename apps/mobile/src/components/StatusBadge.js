@@ -1,6 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { useTheme } from '../theme.js';
+
+const fontSemiBold = Platform.select({
+  ios: 'Poppins-SemiBold',
+  android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
 
 export default function StatusBadge({ text, tone = 'success' }) {
   const { theme } = useTheme();
@@ -41,7 +48,6 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 9,
     letterSpacing: 0.7,
-    fontWeight: '600'
+    fontFamily: fontSemiBold
   }
 });
-
