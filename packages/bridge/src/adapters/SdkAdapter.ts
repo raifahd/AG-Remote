@@ -1,5 +1,6 @@
 import http from 'http';
 import https from 'https';
+import fs from 'fs';
 import {
   AgentState,
   ChatMessage,
@@ -54,6 +55,27 @@ interface GetCascadeTrajectoryResponse {
   };
 }
 
+function detectAgyHub(): { port: number; token: string } | null {
+  try {
+    if (process.platform === 'linux' && fs.existsSync('/proc')) {
+      const pids = fs.readdirSync('/proc').filter((p) => /^\d+$/.test(p));
+      for (const pid of pids) {
+        try {
+          const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
+          if (cmd.includes('--hub-port')) {
+            const portMatch = cmd.match(/--hub-port=(\d+)/);
+            const tokenMatch = cmd.match(/--csrf_token=([a-f0-9-]+)/);
+            if (portMatch && tokenMatch) {
+              return { port: parseInt(portMatch[1] ?? '0', 10), token: tokenMatch[1] ?? '' };
+            }
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export class SdkAdapter implements AgentAdapter {
   private lsPort: number;
   private csrfToken: string;
@@ -67,10 +89,11 @@ export class SdkAdapter implements AgentAdapter {
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
-    this.lsPort = config.lsPort ?? (process.env.ANTIGRAVITY_LS_ADDRESS ? parseInt(process.env.ANTIGRAVITY_LS_ADDRESS.split(':')[1] ?? '44045', 10) : 44045);
-    this.csrfToken = config.csrfToken ?? process.env.ANTIGRAVITY_CSRF_TOKEN ?? '';
+    const detected = detectAgyHub();
+    this.lsPort = config.lsPort ?? (process.env.ANTIGRAVITY_LS_ADDRESS ? parseInt(process.env.ANTIGRAVITY_LS_ADDRESS.split(':')[1] ?? '44045', 10) : (detected?.port ?? 44045));
+    this.csrfToken = config.csrfToken ?? (process.env.ANTIGRAVITY_CSRF_TOKEN ?? (detected?.token ?? ''));
     this.useTls = config.useTls ?? false;
-    this.pollIntervalMs = config.pollIntervalMs ?? 1500;
+    this.pollIntervalMs = config.pollIntervalMs ?? 1000;
     this.executeCommand = config.executeCommand;
 
     if (process.env.ANTIGRAVITY_CONVERSATION_ID) {
@@ -153,7 +176,6 @@ export class SdkAdapter implements AgentAdapter {
         this.stateMachine.onIdle(activeId);
       }
     } catch {
-      // transient polling error
     }
   }
 
@@ -230,6 +252,9 @@ export class SdkAdapter implements AgentAdapter {
   }
 
   async sendPrompt(text: string): Promise<void> {
+    if (!this.activeSessionId) {
+      await this.pollOnce();
+    }
     const cascadeId = this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
     if (!cascadeId) {
       if (this.executeCommand) {
@@ -247,6 +272,7 @@ export class SdkAdapter implements AgentAdapter {
 
     await this.callRpc('SendUserCascadeMessage', payload);
     this.stateMachine.onGenerating(cascadeId);
+    this.pollOnce().catch(() => {});
   }
 
   async approve(): Promise<void> {
@@ -307,7 +333,6 @@ export class SdkAdapter implements AgentAdapter {
       try {
         await this.callRpc('CancelCascadeInvocation', { cascadeId });
       } catch {
-        // ignore error
       }
     }
     this.stateMachine.onStopped(cascadeId);
@@ -317,13 +342,13 @@ export class SdkAdapter implements AgentAdapter {
     return this.stateMachine.onEvent(handler);
   }
 
-  private async callRpc<T = unknown>(method: string, payload: unknown): Promise<T> {
+  private async callRpc<T = unknown>(method: string, payload: unknown, isRetry = false): Promise<T> {
     const body = JSON.stringify(payload);
     const mod = this.useTls ? https : http;
     const proto = this.useTls ? 'https' : 'http';
     const url = `${proto}://127.0.0.1:${this.lsPort}/exa.language_server_pb.LanguageServerService/${method}`;
 
-    return new Promise((resolve, reject) => {
+    return new Promise<T>((resolve, reject) => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Content-Length': String(Buffer.byteLength(body))
@@ -356,12 +381,26 @@ export class SdkAdapter implements AgentAdapter {
         }
       );
 
+      req.setTimeout(5000, () => {
+        req.destroy(new Error(`RPC ${method} timed out`));
+      });
+
       req.on('error', (err) => {
         reject(err);
       });
 
       req.write(body);
       req.end();
+    }).catch(async (err) => {
+      if (!isRetry) {
+        const detected = detectAgyHub();
+        if (detected && (detected.port !== this.lsPort || detected.token !== this.csrfToken)) {
+          this.lsPort = detected.port;
+          this.csrfToken = detected.token;
+          return this.callRpc<T>(method, payload, true);
+        }
+      }
+      throw err;
     });
   }
 }

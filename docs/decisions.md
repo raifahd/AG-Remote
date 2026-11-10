@@ -132,3 +132,18 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Redesigned Chat screen with `AG` avatar bubbles, accent user bubbles, tool step cards, code snippet cards with language badges and copy actions, and floating composer.
   - Implemented Workspaces screen with bridge status badges, open workspace cards, dashed add button, and pairing modal.
   - Implemented Settings screen with theme toggle, accent color swatch selector, notification/quiet-hours toggles, security links, and floating toast notifications.
+
+## 2026-11-10: Chat Latency Optimization, Keyboard Smoothness & Hub Discovery
+- **Language Server Hub Port & CSRF Auto-Discovery:**
+  - Identified dynamic `--hub-port` and `--csrf_token` assignment on Antigravity language server startup.
+  - Implemented `detectAgyHub()` parsing `/proc/<pid>/cmdline` on Linux to extract dynamic hub port and CSRF token automatically.
+  - Added automatic detection and single-retry fallback in `SdkAdapter.callRpc()`, making connections self-healing if Antigravity restarts.
+  - Reduced RPC timeout from infinite to 5000ms with error propagation to prevent hanging calls.
+- **Optimistic Chat Messaging:**
+  - In `apps/mobile/app/(tabs)/chat.js`, appended user messages immediately to local `messages` state on submit with unique local timestamp IDs.
+  - Cleared input text instantly and smoothly triggered scroll-to-bottom, delivering immediate UI responsiveness while ConnectRPC executes in background.
+- **Android Soft-Input White Flash Elimination:**
+  - Set `KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}` on Android to eliminate conflict with native Android `adjustResize` window resizing.
+  - Enabled `UIManager.setLayoutAnimationEnabledExperimental` and applied `LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)` on keyboard show/hide events for smooth interpolation.
+  - Set explicit background colors matching `theme.bg` across root view, `chatBody`, and `composerContainer`.
+  - Hidden floating `TabBar` automatically while keyboard is visible to maximize screen space for messages and composer.

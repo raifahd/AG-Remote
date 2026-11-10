@@ -8,7 +8,9 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Keyboard,
-  Platform
+  Platform,
+  LayoutAnimation,
+  UIManager
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useTheme } from '../../src/theme.js';
@@ -160,6 +162,10 @@ export default function ChatScreen() {
   const flatListRef = useRef(null);
 
   useEffect(() => {
+    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+
     const interval = setInterval(() => {
       setBlinker((b) => !b);
     }, 550);
@@ -167,16 +173,18 @@ export default function ChatScreen() {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setIsKeyboardOpen(true);
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
-        }, 120);
+        }, 80);
       }
     );
 
     const hideSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
       () => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         setIsKeyboardOpen(false);
       }
     );
@@ -231,8 +239,19 @@ export default function ChatScreen() {
     const trimmed = inputText.trim();
     if (!trimmed || !profile || sending) return;
 
-    setSending(true);
+    const optimisticId = `user-opt-${Date.now()}`;
+    const optimisticMsg = {
+      id: optimisticId,
+      role: 'user',
+      text: trimmed,
+      timestamp: Date.now()
+    };
+
+    setMessages((prev) => [...prev, optimisticMsg]);
     setInputText('');
+    setSending(true);
+    setTimeout(scrollToBottom, 60);
+
     try {
       await sendPrompt(profile, trimmed);
       await loadMessages();
@@ -332,12 +351,12 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: theme.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
       <TopBar title={profile?.name || 'acme / dashboard'} status={statusLabel} />
 
-      <View style={styles.chatBody}>
+      <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
         <FlatList
           ref={flatListRef}
           data={messages}
@@ -400,7 +419,8 @@ export default function ChatScreen() {
         style={[
           styles.composerContainer,
           {
-            marginBottom: isKeyboardOpen ? 8 : 76
+            backgroundColor: theme.bg,
+            marginBottom: isKeyboardOpen ? 10 : 76
           }
         ]}
       >

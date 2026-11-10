@@ -4,6 +4,7 @@
     "slug": "ag-remote",
     "version": "0.1.0",
     "orientation": "portrait",
+    "backgroundColor": "#000000",
     "icon": "./assets/icon.png",
     "scheme": "ag-remote",
     "userInterfaceStyle": "automatic",
@@ -11,6 +12,7 @@
       "supportsTablet": true
     },
     "android": {
+      "backgroundColor": "#000000",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
