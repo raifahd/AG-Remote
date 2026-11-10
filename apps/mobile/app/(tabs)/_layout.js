@@ -1,14 +1,17 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import TabBar from '../../src/components/TabBar.js';
+import { useTheme } from '../../src/theme.js';
 
 export default function TabLayout() {
+  const { theme } = useTheme();
+
   return (
     <Tabs
       tabBar={(props) => <TabBar {...props} />}
       screenOptions={{
         headerShown: false,
-        sceneStyle: { backgroundColor: '#000000' }
+        sceneStyle: { backgroundColor: theme.bg }
       }}
     >
       <Tabs.Screen name="index" options={{ title: 'Home' }} />

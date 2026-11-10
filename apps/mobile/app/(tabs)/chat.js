@@ -7,11 +7,10 @@ import {
   ScrollView,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
   Keyboard,
   Platform,
-  LayoutAnimation,
-  UIManager
+  Animated,
+  Easing
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -386,41 +385,71 @@ export default function ChatScreen() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   const flatListRef = useRef(null);
+  const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
+  const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
+  const isKeyboardOpenRef = useRef(false);
 
   useEffect(() => {
-    if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-      UIManager.setLayoutAnimationEnabledExperimental(true);
+    if (!isKeyboardOpenRef.current) {
+      composerBottomAnim.setValue(Math.max(insets.bottom, 16) + 78);
     }
+  }, [insets.bottom]);
 
+  useEffect(() => {
     const interval = setInterval(() => {
       setBlinker((b) => !b);
     }, 550);
 
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setIsKeyboardOpen(true);
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 80);
-      }
-    );
+    const onKeyboardShow = (e) => {
+      isKeyboardOpenRef.current = true;
+      setIsKeyboardOpen(true);
+      const rawHeight = e?.endCoordinates?.height || 0;
+      const kHeight = rawHeight > 0 ? rawHeight : (Platform.OS === 'android' ? 290 : 260);
+      const targetBottom = kHeight + 10;
+      const duration = Platform.OS === 'ios' ? (e?.duration || 250) : 200;
 
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setIsKeyboardOpen(false);
-      }
-    );
+      Animated.timing(composerBottomAnim, {
+        toValue: targetBottom,
+        duration,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: false
+      }).start();
+
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, duration + 50);
+    };
+
+    const onKeyboardHide = (e) => {
+      isKeyboardOpenRef.current = false;
+      setIsKeyboardOpen(false);
+      const targetBottom = Math.max(insets.bottom, 16) + 78;
+      const duration = Platform.OS === 'ios' ? (e?.duration || 250) : 200;
+
+      Animated.timing(composerBottomAnim, {
+        toValue: targetBottom,
+        duration,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: false
+      }).start();
+    };
+
+    const showSub1 = Keyboard.addListener('keyboardWillShow', onKeyboardShow);
+    const showSub2 = Keyboard.addListener('keyboardDidShow', onKeyboardShow);
+    const hideSub1 = Keyboard.addListener('keyboardWillHide', onKeyboardHide);
+    const hideSub2 = Keyboard.addListener('keyboardDidHide', onKeyboardHide);
 
     return () => {
       clearInterval(interval);
-      showSub.remove();
-      hideSub.remove();
+      showSub1.remove();
+      showSub2.remove();
+      hideSub1.remove();
+      hideSub2.remove();
     };
-  }, []);
+  }, [insets.bottom]);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -551,16 +580,8 @@ export default function ChatScreen() {
     ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
     : `${(profile?.name || 'LAPTOP').toUpperCase()}`;
 
-  const composerMarginBottom = isKeyboardOpen
-    ? Math.max(insets.bottom, 10)
-    : Math.max(insets.bottom, 16) + 78;
-
   return (
-    <KeyboardAvoidingView
-      style={[styles.root, { backgroundColor: theme.bg }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
-    >
+    <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <TopBar title={profile?.name || 'acme / dashboard'} status={statusLabel} />
 
       <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
@@ -642,12 +663,12 @@ export default function ChatScreen() {
         )}
       </View>
 
-      <View
+      <Animated.View
         style={[
           styles.composerContainer,
           {
             backgroundColor: theme.bg,
-            marginBottom: composerMarginBottom
+            marginBottom: composerBottomAnim
           }
         ]}
       >
@@ -753,8 +774,8 @@ export default function ChatScreen() {
             </TouchableOpacity>
           )}
         </View>
-      </View>
-    </KeyboardAvoidingView>
+      </Animated.View>
+    </View>
   );
 }
 

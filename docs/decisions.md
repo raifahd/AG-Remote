@@ -187,3 +187,19 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Refactored `MarkdownMessage` to generate a flat 1D array of elements with distinct keys and removed inline padding/borderRadius from nested text spans which caused Android `SpannableStringBuilder` crashes during cell layout measurement.
   - Resolved `VirtualizedList` / `CellRenderer` crash by eliminating duplicate message IDs from cortex trajectory steps in `SdkAdapter.ts` (appending unique step indexes: `user-${executionId}-${i}` and `agent-${messageId}-${i}`).
   - Hardened client `keyExtractor` to `${item?.id || 'msg'}-${index}`, memoized `ChatMessageBubble` with `React.memo`, wrapped `renderItem` with `useCallback`, and configured `initialNumToRender`, `maxToRenderPerBatch`, `windowSize`, and `removeClippedSubviews`.
+
+## 2026-11-10: Smooth Animated Keyboard Elevation & Elimination of White Flash
+- **Root Cause of Keyboard Not Rising on Android:**
+  - `KeyboardAvoidingView` was configured with `behavior={Platform.OS === 'ios' ? 'padding' : undefined}`. On Android, `behavior=undefined` is a no-op that performs zero elevation.
+  - In Expo Go SDK 58 on Android with edge-to-edge decor enabled, the window is not resized by the OS (`windowSoftInputMode` does not alter root window height).
+  - Additionally, `isKeyboardOpen` dropped composer margin to `Math.max(insets.bottom, 10)`, leaving the composer buried beneath the soft keyboard.
+- **Root Cause of White Flash:**
+  - `UIManager.setLayoutAnimationEnabledExperimental(true)` and `LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)` were being executed on keyboard show.
+  - Android's experimental layout animation invalidates dirty window regions globally during layout passes, revealing unpainted white native root surfaces before views finish drawing.
+- **Smooth Animated Solution:**
+  - Removed `LayoutAnimation` and experimental layout animations entirely.
+  - Controlled `composerBottomAnim` using React Native's `Animated.timing` with `Easing.out(Easing.ease)`.
+  - Added multi-listener subscriptions for both `keyboardWillShow` and `keyboardDidShow` (and corresponding hide events) to capture keyboard height immediately across both iOS and Android.
+  - Elevated composer dynamically to `kHeight + 10` on keyboard open and restored smoothly to `Math.max(insets.bottom, 16) + 78` on keyboard hide.
+  - Because `chatBody` has `flex: 1`, it contracts smoothly as the composer rises, keeping the messages feed and auto-scrolled content fully visible above the keyboard.
+  - Updated `TabBar` to listen to `keyboardWillShow` to vanish instantly upon input focus without lag, and updated `_layout.js` scene style to match dynamic theme.

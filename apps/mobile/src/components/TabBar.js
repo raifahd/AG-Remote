@@ -20,17 +20,15 @@ export default function TabBar(props) {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setKeyboardVisible(true)
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setKeyboardVisible(false)
-    );
+    const showSub1 = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
+    const showSub2 = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub1 = Keyboard.addListener('keyboardWillHide', () => setKeyboardVisible(false));
+    const hideSub2 = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => {
-      showSub.remove();
-      hideSub.remove();
+      showSub1.remove();
+      showSub2.remove();
+      hideSub1.remove();
+      hideSub2.remove();
     };
   }, []);
 
