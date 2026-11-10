@@ -65,12 +65,7 @@ export default function TabBar(props) {
           styles.tabbar,
           {
             backgroundColor: theme.raised,
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border,
-            shadowColor: isDark ? '#ffffff' : '#000000',
-            shadowOpacity: isDark ? 0.09 : 0.35,
-            shadowOffset: { width: 0, height: isDark ? 4 : 10 },
-            shadowRadius: isDark ? 16 : 28,
-            elevation: isDark ? 12 : 8
+            borderColor: theme.border
           }
         ]}
       >
@@ -141,21 +136,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 9999,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.35,
-        shadowRadius: 28
-      },
-      android: {
-        elevation: 8
-      },
-      default: {
-        boxShadow: '0px 10px 28px rgba(0, 0, 0, 0.35)'
-      }
-    })
+    justifyContent: 'space-between'
   },
   tabButton: {
     height: 52,

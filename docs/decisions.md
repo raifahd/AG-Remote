@@ -178,3 +178,11 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Integrated `expo-document-picker@~58.0.4` (bundled in Expo Go SDK 58) for multi-file attachments (PDFs, images, code, text).
   - Added horizontal attachment chips above the input box with file names, sizes, and tap-to-remove actions.
   - Automatically formats attachment metadata into user messages and renders visual attachment badges in the chat feed.
+
+## 2026-11-10: Removal of Box Shadow & VirtualizedList Stabilization
+- **Box Shadow Removal:**
+  - Removed all box shadow, elevation, and specular halo properties from the floating bottom navigation bar and the prompt input box per user request, adopting a completely flat, border-only minimalist aesthetic.
+- **VirtualizedList Stabilization:**
+  - In `apps/mobile/app/(tabs)/chat.js`, replaced nested `FlatList` in `attachmentStrip` with `<ScrollView horizontal>` to prevent VirtualizedList nesting conflicts.
+  - Refactored `MarkdownMessage` to generate a flat 1D array of elements with distinct keys and removed inline padding/borderRadius from nested text spans which caused Android `SpannableStringBuilder` crashes during cell layout measurement.
+  - Hardened `FlatList` with `messages || []` and safe `(item, index) => String(item?.id || index)` key extraction.

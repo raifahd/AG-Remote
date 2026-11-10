@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -46,108 +47,128 @@ function CodeSnippet({ code, lang = 'code', theme }) {
   );
 }
 
+function parseInline(text, theme, lineKey) {
+  if (!text) return [];
+  const singleTick = String.fromCharCode(96);
+  const parts = text.split(singleTick);
+  const elements = [];
+
+  for (let pIdx = 0; pIdx < parts.length; pIdx++) {
+    const part = parts[pIdx];
+    if (!part) continue;
+
+    if (pIdx % 2 === 1) {
+      elements.push(
+        <Text
+          key={`${lineKey}-ic-${pIdx}`}
+          style={[styles.inlineCode, { color: theme.accent }]}
+        >
+          {part}
+        </Text>
+      );
+    } else {
+      const bParts = part.split('**');
+      for (let bIdx = 0; bIdx < bParts.length; bIdx++) {
+        const bp = bParts[bIdx];
+        if (!bp) continue;
+        elements.push(
+          <Text
+            key={`${lineKey}-bp-${pIdx}-${bIdx}`}
+            style={bIdx % 2 === 1 ? styles.boldText : undefined}
+          >
+            {bp}
+          </Text>
+        );
+      }
+    }
+  }
+
+  return elements;
+}
+
 function MarkdownMessage({ text, theme }) {
   if (!text) return null;
 
   const tripleTick = String.fromCharCode(96, 96, 96);
-  const singleTick = String.fromCharCode(96);
   const blocks = text.split(tripleTick);
+  const elements = [];
 
-  return (
-    <View style={styles.mdContainer}>
-      {blocks.map((block, i) => {
-        if (i % 2 === 1) {
-          let lang = 'code';
-          let codeContent = block;
-          const firstNl = block.indexOf('\n');
-          if (firstNl !== -1) {
-            const possibleLang = block.slice(0, firstNl).trim();
-            if (possibleLang) lang = possibleLang;
-            codeContent = block.slice(firstNl + 1);
-          }
-          return (
-            <CodeSnippet
-              key={`cb-${i}`}
-              code={codeContent}
-              lang={lang}
-              theme={theme}
-            />
-          );
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (!block) continue;
+
+    if (i % 2 === 1) {
+      let lang = 'code';
+      let codeContent = block;
+      const firstNl = block.indexOf('\n');
+      if (firstNl !== -1) {
+        const possibleLang = block.slice(0, firstNl).trim();
+        if (possibleLang) lang = possibleLang;
+        codeContent = block.slice(firstNl + 1);
+      }
+      elements.push(
+        <CodeSnippet
+          key={`cb-${i}`}
+          code={codeContent}
+          lang={lang}
+          theme={theme}
+        />
+      );
+    } else {
+      const lines = block.split('\n');
+      for (let j = 0; j < lines.length; j++) {
+        const line = lines[j];
+        if (!line.trim()) {
+          elements.push(<View key={`sp-${i}-${j}`} style={{ height: 6 }} />);
+          continue;
         }
 
-        const lines = block.split('\n');
-        return lines.map((line, lineIdx) => {
-          if (!line.trim()) {
-            return <View key={`sp-${i}-${lineIdx}`} style={{ height: 6 }} />;
-          }
-
-          if (line.startsWith('### ')) {
-            return (
-              <Text key={`h3-${i}-${lineIdx}`} style={[styles.mdH3, { color: theme.text }]}>
-                {line.slice(4)}
-              </Text>
-            );
-          }
-          if (line.startsWith('## ')) {
-            return (
-              <Text key={`h2-${i}-${lineIdx}`} style={[styles.mdH2, { color: theme.text }]}>
-                {line.slice(3)}
-              </Text>
-            );
-          }
-          if (line.startsWith('# ')) {
-            return (
-              <Text key={`h1-${i}-${lineIdx}`} style={[styles.mdH1, { color: theme.text }]}>
-                {line.slice(2)}
-              </Text>
-            );
-          }
-
-          const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
-          const lineContent = isBullet ? line.trim().slice(2) : line;
-          const inlineParts = lineContent.split(singleTick);
-
-          return (
-            <View
-              key={`ln-${i}-${lineIdx}`}
-              style={isBullet ? styles.bulletRow : styles.textRow}
-            >
-              {isBullet && (
-                <Text style={[styles.bulletDot, { color: theme.accent }]}>• </Text>
-              )}
-              <Text style={[styles.bubbleText, { color: theme.text }]}>
-                {inlineParts.map((part, partIdx) => {
-                  if (partIdx % 2 === 1) {
-                    return (
-                      <Text
-                        key={`ic-${partIdx}`}
-                        style={[
-                          styles.inlineCode,
-                          { backgroundColor: theme.raised, color: theme.accent }
-                        ]}
-                      >
-                        {part}
-                      </Text>
-                    );
-                  }
-
-                  const boldParts = part.split('**');
-                  return boldParts.map((bp, bpIdx) => (
-                    <Text
-                      key={`bp-${bpIdx}`}
-                      style={bpIdx % 2 === 1 ? styles.boldText : undefined}
-                    >
-                      {bp}
-                    </Text>
-                  ));
-                })}
-              </Text>
-            </View>
+        if (line.startsWith('### ')) {
+          elements.push(
+            <Text key={`h3-${i}-${j}`} style={[styles.mdH3, { color: theme.text }]}>
+              {line.slice(4)}
+            </Text>
           );
-        });
-      })}
-    </View>
-  );
+          continue;
+        }
+        if (line.startsWith('## ')) {
+          elements.push(
+            <Text key={`h2-${i}-${j}`} style={[styles.mdH2, { color: theme.text }]}>
+              {line.slice(3)}
+            </Text>
+          );
+          continue;
+        }
+        if (line.startsWith('# ')) {
+          elements.push(
+            <Text key={`h1-${i}-${j}`} style={[styles.mdH1, { color: theme.text }]}>
+              {line.slice(2)}
+            </Text>
+          );
+          continue;
+        }
+
+        const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
+        const lineContent = isBullet ? line.trim().slice(2) : line;
+
+        elements.push(
+          <View
+            key={`ln-${i}-${j}`}
+            style={isBullet ? styles.bulletRow : styles.textRow}
+          >
+            {isBullet && (
+              <Text style={[styles.bulletDot, { color: theme.accent }]}>• </Text>
+            )}
+            <Text style={[styles.bubbleText, { color: theme.text }]}>
+              {parseInline(lineContent, theme, `${i}-${j}`)}
+            </Text>
+          </View>
+        );
+      }
+    }
+  }
+
+  return <View style={styles.mdContainer}>{elements}</View>;
 }
 
 function ChatEmptyState({
@@ -539,8 +560,8 @@ export default function ChatScreen() {
       <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
         <FlatList
           ref={flatListRef}
-          data={messages}
-          keyExtractor={(item) => String(item.id || item.timestamp || Math.random())}
+          data={messages || []}
+          keyExtractor={(item, index) => String(item?.id || item?.timestamp || index)}
           renderItem={renderItem}
           contentContainerStyle={[
             styles.listContent,
@@ -622,19 +643,19 @@ export default function ChatScreen() {
       >
         {attachments.length > 0 && (
           <View style={styles.attachmentStrip}>
-            <FlatList
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              data={attachments}
-              keyExtractor={(item, idx) => `${item.name}-${idx}`}
               contentContainerStyle={styles.attachmentStripContent}
-              renderItem={({ item, index }) => (
+            >
+              {attachments.map((item, index) => (
                 <View
+                  key={`att-${item.name}-${index}`}
                   style={[
                     styles.attachmentChip,
                     {
                       backgroundColor: theme.raised,
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border
+                      borderColor: theme.border
                     }
                   ]}
                 >
@@ -657,8 +678,8 @@ export default function ChatScreen() {
                     <Icon name="x" size={13} color={theme.muted} />
                   </TouchableOpacity>
                 </View>
-              )}
-            />
+              ))}
+            </ScrollView>
           </View>
         )}
 
@@ -667,12 +688,7 @@ export default function ChatScreen() {
             styles.composer,
             {
               backgroundColor: theme.raised,
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border,
-              shadowColor: isDark ? '#ffffff' : '#000000',
-              shadowOpacity: isDark ? 0.08 : 0.25,
-              shadowOffset: { width: 0, height: isDark ? 3 : 8 },
-              shadowRadius: isDark ? 16 : 24,
-              elevation: isDark ? 10 : 6
+              borderColor: theme.border
             }
           ]}
         >
@@ -894,9 +910,6 @@ const styles = StyleSheet.create({
   },
   inlineCode: {
     fontSize: 11,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: 5,
     fontFamily: fontMono
   },
   blinker: {
