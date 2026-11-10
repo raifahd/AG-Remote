@@ -467,3 +467,4 @@ const styles = StyleSheet.create({
     fontFamily: fontRegular
   }
 });
+
