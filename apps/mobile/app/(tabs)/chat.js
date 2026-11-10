@@ -275,6 +275,102 @@ function ChatEmptyState({
   );
 }
 
+const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme }) {
+  if (!item) return null;
+  const isUser = item.role === 'user' || item.sender === 'user';
+  const isTool = item.kind === 'tool';
+
+  if (isTool) {
+    return (
+      <View
+        style={[
+          styles.toolStep,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.border
+          }
+        ]}
+      >
+        <View
+          style={[
+            styles.tinyIcon,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border
+            }
+          ]}
+        >
+          <Icon name="terminal" size={17} color={theme.accent} />
+        </View>
+        <View style={styles.toolStepContent}>
+          <Text style={[styles.toolStepTitle, { color: theme.text }]} numberOfLines={1}>
+            {item.title || 'Executed tool'}
+          </Text>
+          <Text style={[styles.toolStepDesc, { color: theme.muted }]} numberOfLines={1}>
+            {item.text || item.summary || 'Command output'}
+          </Text>
+        </View>
+        <Icon name="chevron" size={17} color={theme.muted} />
+      </View>
+    );
+  }
+
+  if (isUser) {
+    const text = typeof item.text === 'string' ? item.text : '';
+    const hasAttachment = text.startsWith('[Attachment:');
+    let attachmentLine = null;
+    let bodyText = text;
+
+    if (hasAttachment) {
+      const doubleNl = text.indexOf('\n\n');
+      if (doubleNl !== -1) {
+        attachmentLine = text.slice(0, doubleNl);
+        bodyText = text.slice(doubleNl + 2);
+      } else {
+        attachmentLine = text;
+        bodyText = '';
+      }
+    }
+
+    return (
+      <View style={styles.userMessageRow}>
+        <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
+          {attachmentLine && (
+            <View style={styles.userAttachmentBadge}>
+              <Icon name="attach" size={13} color="#ffffff" />
+              <Text style={styles.userAttachmentText} numberOfLines={2}>
+                {attachmentLine.replace(/\[Attachment:\s*|\s*\]/g, '')}
+              </Text>
+            </View>
+          )}
+          {Boolean(bodyText) && (
+            <Text style={styles.userBubbleText}>{bodyText}</Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.agentMessageRow}>
+      <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
+        <Text style={styles.agentAvatarText}>AG</Text>
+      </View>
+      <View
+        style={[
+          styles.agentBubble,
+          {
+            backgroundColor: theme.surface,
+            borderColor: theme.border
+          }
+        ]}
+      >
+        <MarkdownMessage text={item.text} theme={theme} />
+      </View>
+    </View>
+  );
+});
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useTheme();
@@ -446,100 +542,10 @@ export default function ChatScreen() {
 
   const isWorking = agentStatus === 'generating';
 
-  const renderItem = ({ item }) => {
-    const isUser = item.role === 'user' || item.sender === 'user';
-    const isTool = item.kind === 'tool';
-
-    if (isTool) {
-      return (
-        <View
-          style={[
-            styles.toolStep,
-            {
-              backgroundColor: theme.surface,
-              borderColor: theme.border
-            }
-          ]}
-        >
-          <View
-            style={[
-              styles.tinyIcon,
-              {
-                backgroundColor: theme.surface,
-                borderColor: theme.border
-              }
-            ]}
-          >
-            <Icon name="terminal" size={17} color={theme.accent} />
-          </View>
-          <View style={styles.toolStepContent}>
-            <Text style={[styles.toolStepTitle, { color: theme.text }]} numberOfLines={1}>
-              {item.title || 'Executed tool'}
-            </Text>
-            <Text style={[styles.toolStepDesc, { color: theme.muted }]} numberOfLines={1}>
-              {item.text || item.summary || 'Command output'}
-            </Text>
-          </View>
-          <Icon name="chevron" size={17} color={theme.muted} />
-        </View>
-      );
-    }
-
-    if (isUser) {
-      const text = item.text || '';
-      const hasAttachment = text.startsWith('[Attachment:');
-      let attachmentLine = null;
-      let bodyText = text;
-
-      if (hasAttachment) {
-        const doubleNl = text.indexOf('\n\n');
-        if (doubleNl !== -1) {
-          attachmentLine = text.slice(0, doubleNl);
-          bodyText = text.slice(doubleNl + 2);
-        } else {
-          attachmentLine = text;
-          bodyText = '';
-        }
-      }
-
-      return (
-        <View style={styles.userMessageRow}>
-          <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
-            {attachmentLine && (
-              <View style={styles.userAttachmentBadge}>
-                <Icon name="attach" size={13} color="#ffffff" />
-                <Text style={styles.userAttachmentText} numberOfLines={2}>
-                  {attachmentLine.replace(/\[Attachment:\s*|\s*\]/g, '')}
-                </Text>
-              </View>
-            )}
-            {Boolean(bodyText) && (
-              <Text style={styles.userBubbleText}>{bodyText}</Text>
-            )}
-          </View>
-        </View>
-      );
-    }
-
-    return (
-      <View style={styles.agentMessageRow}>
-        <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
-          <Text style={styles.agentAvatarText}>AG</Text>
-        </View>
-        <View
-          style={[
-            styles.agentBubble,
-            {
-              backgroundColor: theme.surface,
-              borderColor: theme.border
-            }
-          ]}
-        >
-          <MarkdownMessage text={item.text} theme={theme} />
-        </View>
-      </View>
-    );
-  };
+  const renderItem = useCallback(
+    ({ item }) => <ChatMessageBubble item={item} theme={theme} />,
+    [theme]
+  );
 
   const statusLabel = wsConnected
     ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
@@ -561,8 +567,12 @@ export default function ChatScreen() {
         <FlatList
           ref={flatListRef}
           data={messages || []}
-          keyExtractor={(item, index) => String(item?.id || item?.timestamp || index)}
+          keyExtractor={(item, index) => `${item?.id || 'msg'}-${index}`}
           renderItem={renderItem}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={11}
+          removeClippedSubviews={Platform.OS === 'android'}
           contentContainerStyle={[
             styles.listContent,
             messages.length === 0 && styles.listContentEmpty

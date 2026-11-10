@@ -185,4 +185,5 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **VirtualizedList Stabilization:**
   - In `apps/mobile/app/(tabs)/chat.js`, replaced nested `FlatList` in `attachmentStrip` with `<ScrollView horizontal>` to prevent VirtualizedList nesting conflicts.
   - Refactored `MarkdownMessage` to generate a flat 1D array of elements with distinct keys and removed inline padding/borderRadius from nested text spans which caused Android `SpannableStringBuilder` crashes during cell layout measurement.
-  - Hardened `FlatList` with `messages || []` and safe `(item, index) => String(item?.id || index)` key extraction.
+  - Resolved `VirtualizedList` / `CellRenderer` crash by eliminating duplicate message IDs from cortex trajectory steps in `SdkAdapter.ts` (appending unique step indexes: `user-${executionId}-${i}` and `agent-${messageId}-${i}`).
+  - Hardened client `keyExtractor` to `${item?.id || 'msg'}-${index}`, memoized `ChatMessageBubble` with `React.memo`, wrapped `renderItem` with `useCallback`, and configured `initialNumToRender`, `maxToRenderPerBatch`, `windowSize`, and `removeClippedSubviews`.

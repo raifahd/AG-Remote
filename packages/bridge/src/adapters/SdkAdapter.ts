@@ -230,14 +230,14 @@ export class SdkAdapter implements AgentAdapter {
 
         if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && step.userInput?.userResponse) {
           messages.push({
-            id: step.metadata?.executionId ?? `user-${i}`,
+            id: `user-${step.metadata?.executionId ?? 'u'}-${i}`,
             role: 'user',
             text: step.userInput.userResponse,
             timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
           });
         } else if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.plannerResponse?.response) {
           messages.push({
-            id: step.plannerResponse.messageId ?? `agent-${i}`,
+            id: `agent-${step.plannerResponse.messageId ?? step.metadata?.executionId ?? 'a'}-${i}`,
             role: 'agent',
             text: step.plannerResponse.response,
             timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
