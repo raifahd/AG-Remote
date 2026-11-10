@@ -147,3 +147,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Enabled `UIManager.setLayoutAnimationEnabledExperimental` and applied `LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)` on keyboard show/hide events for smooth interpolation.
   - Set explicit background colors matching `theme.bg` across root view, `chatBody`, and `composerContainer`.
   - Hidden floating `TabBar` automatically while keyboard is visible to maximize screen space for messages and composer.
+
+## 2026-11-10: Chat UI Polish, Dynamic Input Clearance & System Notifications
+- **Send Arrow Icon & Dynamic Composer Positioning:**
+  - Upgraded send button icon from paper-airplane glyph to `ArrowUp02Icon` (↑) from `@hugeicons/core-free-icons`, aligned with companion chat apps.
+  - Dynamically calculated composer bottom margin using `useSafeAreaInsets()` (`Math.max(insets.bottom, 16) + 78` when closed, `Math.max(insets.bottom, 10)` when open). Guarantees a 16px floating clearance above the bottom navigation bar on all device aspect ratios.
+- **Scroll Down Arrow Placement:**
+  - Repositioned the scroll-to-bottom button inside `chatBody` to `bottom: 14`, placing it directly above the composer input bar rather than floating high in the message feed.
+  - Added visibility guard rendering only when more than 2 messages exist.
+- **Empty Chat & Workspace Session Starter:**
+  - Implemented `ChatEmptyState` component for the chat tab when no messages exist.
+  - Features an animated companion orb, active workspace card with live status indicator and host address, one-tap workspace switcher for all stored fleet profiles, and quick action starter prompt pills.
+- **TopBar Notification Modal & Dispatch:**
+  - Created `NotificationModal` accessible from the top-right bell icon across all screens via `TopBar`.
+  - Added live push delivery connection status, target host, one-tap "Send Test Push Notification" trigger hitting `/v1/push/test` on the bridge, quiet hours toggle, and categorized alert descriptions.

@@ -85,6 +85,10 @@ export async function updateSettings(profile, settings) {
   return authenticatedRequest(profile, '/v1/settings', 'POST', settings);
 }
 
+export async function sendTestNotification(profile) {
+  return authenticatedRequest(profile, '/v1/push/test', 'POST');
+}
+
 async function authenticatedRequest(profile, pathname, method, body = null) {
   if (!profile || !profile.baseUrl || !profile.token) {
     throw new Error('Profile missing or incomplete');

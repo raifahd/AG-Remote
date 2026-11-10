@@ -13,10 +13,11 @@ import {
   UIManager
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
-import { getActiveProfile } from '../../src/storage.js';
+import { getActiveProfile, getProfiles, setActiveProfileId } from '../../src/storage.js';
 import { fetchMessages, fetchState, sendPrompt, sendStop } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
@@ -148,9 +149,115 @@ function MarkdownMessage({ text, theme }) {
   );
 }
 
+function ChatEmptyState({
+  profile,
+  allProfiles,
+  onSwitchWorkspace,
+  onSelectPrompt,
+  theme
+}) {
+  const otherProfiles = allProfiles.filter((p) => p.id !== profile?.id);
+  const quickPrompts = [
+    { label: 'Run test suite', icon: 'terminal', prompt: 'Run tests across all workspaces' },
+    { label: 'Check git status', icon: 'shield', prompt: 'Check git status and report modified files' },
+    { label: 'Explain architecture', icon: 'file', prompt: 'Summarize current codebase architecture' },
+    { label: 'Pending tasks', icon: 'check', prompt: 'What tasks are remaining in this project?' }
+  ];
+
+  return (
+    <View style={styles.emptyContainer}>
+      <View style={styles.orbWrap}>
+        <View style={[styles.orbPulseRing, { borderColor: `${theme.accent}33` }]} />
+        <View style={[styles.orbInner, { backgroundColor: theme.accent }]}>
+          <Icon name="chat" size={26} color="#ffffff" />
+        </View>
+      </View>
+
+      <Text style={[styles.emptyHeading, { color: theme.text }]}>Antigravity Remote</Text>
+      <Text style={[styles.emptySub, { color: theme.muted }]}>
+        Connected to your remote workspace. Send a message to start.
+      </Text>
+
+      {profile && (
+        <View style={[styles.activeWsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <View style={styles.activeWsHeader}>
+            <View style={styles.wsLabelRow}>
+              <View style={[styles.activeDot, { backgroundColor: theme.success }]} />
+              <Text style={[styles.wsTitle, { color: theme.text }]} numberOfLines={1}>
+                {profile.name}
+              </Text>
+            </View>
+            <View style={[styles.onlinePill, { backgroundColor: `${theme.success}20` }]}>
+              <Text style={[styles.onlinePillText, { color: theme.success }]}>ACTIVE</Text>
+            </View>
+          </View>
+          <Text style={[styles.wsHost, { color: theme.muted }]} numberOfLines={1}>
+            {profile.baseUrl}
+          </Text>
+        </View>
+      )}
+
+      {otherProfiles.length > 0 && (
+        <View style={styles.switchSection}>
+          <Text style={[styles.sectionEyebrow, { color: theme.muted }]}>
+            SWITCH WORKSPACE
+          </Text>
+          <View style={styles.switchGrid}>
+            {otherProfiles.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[
+                  styles.switchCard,
+                  { backgroundColor: theme.surface, borderColor: theme.border }
+                ]}
+                onPress={() => onSwitchWorkspace(item)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.switchCardLeft}>
+                  <Icon name="grid" size={16} color={theme.accent} />
+                  <Text style={[styles.switchCardName, { color: theme.text }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                </View>
+                <Icon name="chevron" size={14} color={theme.muted} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      <View style={styles.startersSection}>
+        <Text style={[styles.sectionEyebrow, { color: theme.muted }]}>
+          QUICK ACTIONS
+        </Text>
+        <View style={styles.starterGrid}>
+          {quickPrompts.map((item, idx) => (
+            <TouchableOpacity
+              key={`qp-${idx}`}
+              style={[
+                styles.starterPill,
+                { backgroundColor: theme.surface, borderColor: theme.border }
+              ]}
+              onPress={() => onSelectPrompt(item.prompt)}
+              activeOpacity={0.7}
+            >
+              <Icon name={item.icon} size={15} color={theme.accent} />
+              <Text style={[styles.starterText, { color: theme.text }]}>
+                {item.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 export default function ChatScreen() {
+  const insets = useSafeAreaInsets();
   const { theme } = useTheme();
   const [profile, setProfile] = useState(null);
+  const [allProfiles, setAllProfiles] = useState([]);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
@@ -198,8 +305,12 @@ export default function ChatScreen() {
 
   const loadMessages = useCallback(async () => {
     try {
-      const active = await getActiveProfile();
+      const [active, profilesList] = await Promise.all([
+        getActiveProfile(),
+        getProfiles()
+      ]);
       setProfile(active);
+      setAllProfiles(profilesList || []);
       if (active) {
         const [list, st] = await Promise.all([
           fetchMessages(active, 50).catch(() => []),
@@ -233,6 +344,15 @@ export default function ChatScreen() {
 
   const scrollToBottom = () => {
     flatListRef.current?.scrollToEnd({ animated: true });
+  };
+
+  const handleSwitchWorkspace = async (target) => {
+    await setActiveProfileId(target.id);
+    await loadMessages();
+  };
+
+  const handleSelectPrompt = (promptText) => {
+    setInputText(promptText);
   };
 
   const handleSend = async () => {
@@ -348,6 +468,10 @@ export default function ChatScreen() {
     ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
     : `${(profile?.name || 'LAPTOP').toUpperCase()}`;
 
+  const composerMarginBottom = isKeyboardOpen
+    ? Math.max(insets.bottom, 10)
+    : Math.max(insets.bottom, 16) + 78;
+
   return (
     <KeyboardAvoidingView
       style={[styles.root, { backgroundColor: theme.bg }]}
@@ -362,10 +486,24 @@ export default function ChatScreen() {
           data={messages}
           keyExtractor={(item) => String(item.id || item.timestamp || Math.random())}
           renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            messages.length === 0 && styles.listContentEmpty
+          ]}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
-            <Text style={[styles.dateLabel, { color: theme.subtle }]}>TODAY, 10:42</Text>
+            messages.length > 0 ? (
+              <Text style={[styles.dateLabel, { color: theme.subtle }]}>TODAY, 10:42</Text>
+            ) : null
+          }
+          ListEmptyComponent={
+            <ChatEmptyState
+              profile={profile}
+              allProfiles={allProfiles}
+              onSwitchWorkspace={handleSwitchWorkspace}
+              onSelectPrompt={handleSelectPrompt}
+              theme={theme}
+            />
           }
           ListFooterComponent={
             isWorking ? (
@@ -399,20 +537,22 @@ export default function ChatScreen() {
           }
         />
 
-        <TouchableOpacity
-          style={[
-            styles.scrollBottomButton,
-            {
-              backgroundColor: theme.raised,
-              borderColor: theme.border,
-              bottom: isKeyboardOpen ? 72 : 86
-            }
-          ]}
-          onPress={scrollToBottom}
-          activeOpacity={0.8}
-        >
-          <Icon name="arrow-down" size={17} color={theme.accent} />
-        </TouchableOpacity>
+        {messages.length > 2 && (
+          <TouchableOpacity
+            style={[
+              styles.scrollBottomButton,
+              {
+                backgroundColor: theme.raised,
+                borderColor: theme.border,
+                bottom: 14
+              }
+            ]}
+            onPress={scrollToBottom}
+            activeOpacity={0.8}
+          >
+            <Icon name="arrow-down" size={17} color={theme.accent} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View
@@ -420,7 +560,7 @@ export default function ChatScreen() {
           styles.composerContainer,
           {
             backgroundColor: theme.bg,
-            marginBottom: isKeyboardOpen ? 10 : 76
+            marginBottom: composerMarginBottom
           }
         ]}
       >
@@ -458,11 +598,18 @@ export default function ChatScreen() {
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.sendButton, { backgroundColor: theme.accent }]}
+              style={[
+                styles.sendButton,
+                {
+                  backgroundColor: inputText.trim() ? theme.accent : `${theme.accent}90`,
+                  opacity: inputText.trim() ? 1 : 0.65
+                }
+              ]}
               onPress={handleSend}
+              disabled={!inputText.trim()}
               activeOpacity={0.8}
             >
-              <Icon name="send" size={18} color="#ffffff" />
+              <Icon name="send" size={19} color="#ffffff" />
             </TouchableOpacity>
           )}
         </View>
@@ -488,6 +635,13 @@ const fontBold = Platform.select({
 const fontSemiBold = Platform.select({
   ios: 'Poppins-SemiBold',
   android: 'Poppins_600SemiBold',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
+const fontMedium = Platform.select({
+  ios: 'Poppins-Medium',
+  android: 'Poppins_500Medium',
   web: 'Poppins, sans-serif',
   default: 'System'
 });
@@ -762,5 +916,145 @@ const styles = StyleSheet.create({
     height: 12,
     backgroundColor: '#ffffff',
     borderRadius: 3
+  },
+  listContentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 20
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 16
+  },
+  orbWrap: {
+    width: 72,
+    height: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    position: 'relative'
+  },
+  orbPulseRing: {
+    position: 'absolute',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1.5
+  },
+  orbInner: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  emptyHeading: {
+    fontSize: 18,
+    fontFamily: fontBold,
+    marginBottom: 4,
+    textAlign: 'center'
+  },
+  emptySub: {
+    fontSize: 12,
+    fontFamily: fontRegular,
+    textAlign: 'center',
+    marginBottom: 20,
+    maxWidth: 280
+  },
+  activeWsCard: {
+    width: '100%',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 16
+  },
+  activeWsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4
+  },
+  wsLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1
+  },
+  activeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4
+  },
+  wsTitle: {
+    fontSize: 14,
+    fontFamily: fontSemiBold
+  },
+  onlinePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8
+  },
+  onlinePillText: {
+    fontSize: 10,
+    fontFamily: fontBold,
+    letterSpacing: 0.5
+  },
+  wsHost: {
+    fontSize: 11,
+    fontFamily: fontRegular,
+    marginLeft: 16
+  },
+  switchSection: {
+    width: '100%',
+    marginBottom: 16
+  },
+  sectionEyebrow: {
+    fontSize: 10,
+    fontFamily: fontBold,
+    letterSpacing: 0.8,
+    marginBottom: 8
+  },
+  switchGrid: {
+    gap: 8
+  },
+  switchCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1
+  },
+  switchCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1
+  },
+  switchCardName: {
+    fontSize: 13,
+    fontFamily: fontMedium
+  },
+  startersSection: {
+    width: '100%'
+  },
+  starterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8
+  },
+  starterPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1
+  },
+  starterText: {
+    fontSize: 12,
+    fontFamily: fontMedium
   }
 });
