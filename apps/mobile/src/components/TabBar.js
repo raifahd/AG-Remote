@@ -14,7 +14,7 @@ const TABS = [
 
 export default function TabBar(props) {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const router = useRouter();
   const pathname = usePathname() || '/';
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -65,7 +65,12 @@ export default function TabBar(props) {
           styles.tabbar,
           {
             backgroundColor: theme.raised,
-            borderColor: theme.border
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border,
+            shadowColor: isDark ? '#ffffff' : '#000000',
+            shadowOpacity: isDark ? 0.09 : 0.35,
+            shadowOffset: { width: 0, height: isDark ? 4 : 10 },
+            shadowRadius: isDark ? 16 : 28,
+            elevation: isDark ? 12 : 8
           }
         ]}
       >
@@ -134,7 +139,7 @@ const styles = StyleSheet.create({
     maxWidth: 452,
     padding: 7,
     borderWidth: 1,
-    borderRadius: 22,
+    borderRadius: 9999,
     flexDirection: 'row',
     justifyContent: 'space-between',
     ...Platform.select({
@@ -155,7 +160,7 @@ const styles = StyleSheet.create({
   tabButton: {
     height: 52,
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center'
   },

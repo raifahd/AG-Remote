@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
@@ -255,11 +256,12 @@ function ChatEmptyState({
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const [profile, setProfile] = useState(null);
   const [allProfiles, setAllProfiles] = useState([]);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
+  const [attachments, setAttachments] = useState([]);
   const [sending, setSending] = useState(false);
   const [agentStatus, setAgentStatus] = useState('idle');
   const [wsConnected, setWsConnected] = useState(false);
@@ -355,25 +357,53 @@ export default function ChatScreen() {
     setInputText(promptText);
   };
 
+  const handlePickDocument = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        type: ['*/*'],
+        multiple: true,
+        copyToCacheDirectory: true
+      });
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        setAttachments((prev) => [...prev, ...res.assets]);
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to select attachment');
+    }
+  };
+
+  const handleRemoveAttachment = (idxToRemove) => {
+    setAttachments((prev) => prev.filter((_, idx) => idx !== idxToRemove));
+  };
+
   const handleSend = async () => {
     const trimmed = inputText.trim();
-    if (!trimmed || !profile || sending) return;
+    if ((!trimmed && attachments.length === 0) || !profile || sending) return;
+
+    let messageText = trimmed;
+    if (attachments.length > 0) {
+      const summaryList = attachments
+        .map((a) => `[Attachment: ${a.name} (${a.mimeType || 'file'}${a.size ? `, ${Math.round(a.size / 1024)}KB` : ''})]`)
+        .join('\n');
+      messageText = trimmed ? `${summaryList}\n\n${trimmed}` : summaryList;
+    }
 
     const optimisticId = `user-opt-${Date.now()}`;
     const optimisticMsg = {
       id: optimisticId,
       role: 'user',
-      text: trimmed,
+      text: messageText,
       timestamp: Date.now()
     };
 
     setMessages((prev) => [...prev, optimisticMsg]);
     setInputText('');
+    setAttachments([]);
     setSending(true);
     setTimeout(scrollToBottom, 60);
 
     try {
-      await sendPrompt(profile, trimmed);
+      await sendPrompt(profile, messageText);
       await loadMessages();
       setTimeout(scrollToBottom, 150);
     } catch (err) {
@@ -435,10 +465,36 @@ export default function ChatScreen() {
     }
 
     if (isUser) {
+      const text = item.text || '';
+      const hasAttachment = text.startsWith('[Attachment:');
+      let attachmentLine = null;
+      let bodyText = text;
+
+      if (hasAttachment) {
+        const doubleNl = text.indexOf('\n\n');
+        if (doubleNl !== -1) {
+          attachmentLine = text.slice(0, doubleNl);
+          bodyText = text.slice(doubleNl + 2);
+        } else {
+          attachmentLine = text;
+          bodyText = '';
+        }
+      }
+
       return (
         <View style={styles.userMessageRow}>
           <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
-            <Text style={styles.userBubbleText}>{item.text}</Text>
+            {attachmentLine && (
+              <View style={styles.userAttachmentBadge}>
+                <Icon name="attach" size={13} color="#ffffff" />
+                <Text style={styles.userAttachmentText} numberOfLines={2}>
+                  {attachmentLine.replace(/\[Attachment:\s*|\s*\]/g, '')}
+                </Text>
+              </View>
+            )}
+            {Boolean(bodyText) && (
+              <Text style={styles.userBubbleText}>{bodyText}</Text>
+            )}
           </View>
         </View>
       );
@@ -564,20 +620,78 @@ export default function ChatScreen() {
           }
         ]}
       >
+        {attachments.length > 0 && (
+          <View style={styles.attachmentStrip}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={attachments}
+              keyExtractor={(item, idx) => `${item.name}-${idx}`}
+              contentContainerStyle={styles.attachmentStripContent}
+              renderItem={({ item, index }) => (
+                <View
+                  style={[
+                    styles.attachmentChip,
+                    {
+                      backgroundColor: theme.raised,
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border
+                    }
+                  ]}
+                >
+                  <Icon name="attach" size={14} color={theme.accent} />
+                  <View style={styles.attachmentChipTextWrap}>
+                    <Text style={[styles.attachmentChipName, { color: theme.text }]} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    {item.size ? (
+                      <Text style={[styles.attachmentChipSize, { color: theme.muted }]}>
+                        {Math.round(item.size / 1024)} KB
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity
+                    style={styles.attachmentRemoveBtn}
+                    onPress={() => handleRemoveAttachment(index)}
+                    activeOpacity={0.7}
+                  >
+                    <Icon name="x" size={13} color={theme.muted} />
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          </View>
+        )}
+
         <View
           style={[
             styles.composer,
             {
               backgroundColor: theme.raised,
-              borderColor: theme.border
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : theme.border,
+              shadowColor: isDark ? '#ffffff' : '#000000',
+              shadowOpacity: isDark ? 0.08 : 0.25,
+              shadowOffset: { width: 0, height: isDark ? 3 : 8 },
+              shadowRadius: isDark ? 16 : 24,
+              elevation: isDark ? 10 : 6
             }
           ]}
         >
-          <TouchableOpacity style={styles.attachButton} activeOpacity={0.7}>
-            <Icon name="attach" size={20} color={theme.muted} />
+          <TouchableOpacity
+            style={styles.attachButton}
+            onPress={handlePickDocument}
+            activeOpacity={0.7}
+          >
+            <Icon name="attach" size={20} color={attachments.length > 0 ? theme.accent : theme.muted} />
           </TouchableOpacity>
           <TextInput
-            style={[styles.input, { color: theme.text }]}
+            style={[
+              styles.input,
+              {
+                color: theme.text,
+                textAlign: inputText ? 'left' : 'center',
+                textAlignVertical: 'center'
+              }
+            ]}
             placeholder="Message your agent"
             placeholderTextColor={theme.subtle}
             value={inputText}
@@ -601,12 +715,12 @@ export default function ChatScreen() {
               style={[
                 styles.sendButton,
                 {
-                  backgroundColor: inputText.trim() ? theme.accent : `${theme.accent}90`,
-                  opacity: inputText.trim() ? 1 : 0.65
+                  backgroundColor: (inputText.trim() || attachments.length > 0) ? theme.accent : `${theme.accent}90`,
+                  opacity: (inputText.trim() || attachments.length > 0) ? 1 : 0.65
                 }
               ]}
               onPress={handleSend}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() && attachments.length === 0}
               activeOpacity={0.8}
             >
               <Icon name="send" size={19} color="#ffffff" />
@@ -872,43 +986,86 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 440,
     minHeight: 56,
-    borderRadius: 18,
+    borderRadius: 9999,
     borderWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 7,
-    gap: 6,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 9 },
-        shadowOpacity: 0.25,
-        shadowRadius: 25
-      },
-      android: {
-        elevation: 8
-      }
-    })
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    gap: 6
   },
   attachButton: {
     width: 38,
     height: 38,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center'
   },
   input: {
     flex: 1,
-    fontSize: 12,
-    paddingVertical: 8,
+    fontSize: 13,
+    paddingVertical: Platform.OS === 'android' ? 6 : 8,
+    textAlignVertical: 'center',
     maxHeight: 76,
     fontFamily: fontRegular
   },
   sendButton: {
     width: 39,
     height: 39,
-    borderRadius: 13,
+    borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  attachmentStrip: {
+    width: '100%',
+    maxWidth: 440,
+    marginBottom: 8
+  },
+  attachmentStripContent: {
+    gap: 8,
+    paddingHorizontal: 4
+  },
+  attachmentChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 9999,
+    borderWidth: 1,
+    gap: 8,
+    maxWidth: 220
+  },
+  attachmentChipTextWrap: {
+    flexShrink: 1
+  },
+  attachmentChipName: {
+    fontSize: 11,
+    fontFamily: fontMedium
+  },
+  attachmentChipSize: {
+    fontSize: 9,
+    fontFamily: fontRegular
+  },
+  attachmentRemoveBtn: {
+    padding: 3,
+    borderRadius: 9999,
+    marginLeft: 2
+  },
+  userAttachmentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginBottom: 6,
+    alignSelf: 'flex-start'
+  },
+  userAttachmentText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontFamily: fontMedium
   },
   stopButton: {},
   stopSquare: {

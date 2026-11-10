@@ -161,3 +161,20 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **TopBar Notification Modal & Dispatch:**
   - Created `NotificationModal` accessible from the top-right bell icon across all screens via `TopBar`.
   - Added live push delivery connection status, target host, one-tap "Send Test Push Notification" trigger hitting `/v1/push/test` on the bridge, quiet hours toggle, and categorized alert descriptions.
+
+## 2026-11-10: Pill Geometry, Dark Mode Glow & File Attachments
+- **100% Border Radius (Capsule Geometry):**
+  - Updated `TabBar` and `composer` input container to `borderRadius: 9999`, creating complete continuous pill geometry.
+  - Set tab items and send/attach buttons to match the circular capsule style.
+- **Dark Mode Box Shadow & Rim Illumination:**
+  - Configured dark-mode-specific shadow and rim styles against OLED `#000000` backgrounds:
+    - Translucent rim borders (`rgba(255, 255, 255, 0.12)`) providing edge definition.
+    - Soft specular ambient glow using `shadowColor: '#ffffff'` with `shadowOpacity: 0.08` and `shadowRadius: 16`.
+    - Android elevated surfaces (`elevation: 10-12`) ensuring physical depth over pure black.
+- **Centered Placeholder Typography:**
+  - Configured `TextInput` with `textAlignVertical: 'center'` and dynamic `textAlign: inputText ? 'left' : 'center'`.
+  - When empty, "Message your agent" sits in the exact horizontal and vertical center of the input bar; when typing, text flows naturally from the left.
+- **File & Document Attachments:**
+  - Integrated `expo-document-picker@~58.0.4` (bundled in Expo Go SDK 58) for multi-file attachments (PDFs, images, code, text).
+  - Added horizontal attachment chips above the input box with file names, sizes, and tap-to-remove actions.
+  - Automatically formats attachment metadata into user messages and renders visual attachment badges in the chat feed.
