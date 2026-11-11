@@ -1,7 +1,8 @@
 import {
   HealthResponseSchema,
   AgentStateSchema,
-  ChatMessageSchema
+  ChatMessageSchema,
+  UploadResponseSchema
 } from '@ag-remote/shared';
 import { z } from 'zod';
 
@@ -87,6 +88,42 @@ export async function updateSettings(profile, settings) {
 
 export async function sendTestNotification(profile) {
   return authenticatedRequest(profile, '/v1/push/test', 'POST');
+}
+
+export async function uploadFile(profile, asset) {
+  if (!profile || !profile.baseUrl || !profile.token) {
+    throw new Error('Profile missing or incomplete');
+  }
+
+  const fileRes = await fetch(asset.uri);
+  const blob = await fileRes.blob();
+  const dataBase64 = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const res = reader.result;
+      if (typeof res === 'string') {
+        const commaIdx = res.indexOf(',');
+        resolve(commaIdx !== -1 ? res.slice(commaIdx + 1) : res);
+      } else {
+        reject(new Error('Failed to read file'));
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+
+  const payload = {
+    filename: asset.name || 'upload',
+    mimeType: asset.mimeType || 'application/octet-stream',
+    dataBase64
+  };
+
+  const uploadRes = await authenticatedRequest(profile, '/v1/upload', 'POST', payload);
+  const parsed = UploadResponseSchema.safeParse(uploadRes);
+  if (!parsed.success) {
+    throw new Error('Invalid upload response from bridge');
+  }
+  return parsed.data;
 }
 
 async function authenticatedRequest(profile, pathname, method, body = null) {

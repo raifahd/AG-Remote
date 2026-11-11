@@ -19,7 +19,7 @@ import { useTheme } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
 import { getActiveProfile, getProfiles, setActiveProfileId } from '../../src/storage.js';
-import { fetchMessages, fetchState, sendPrompt, sendStop } from '../../src/api.js';
+import { fetchMessages, fetchState, sendPrompt, sendStop, uploadFile } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
 function CodeSnippet({ code, lang = 'code', theme }) {
@@ -329,16 +329,29 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
         attachmentLine = text;
         bodyText = '';
       }
+      if (bodyText.includes('Agent instruction:')) {
+        const nextPart = bodyText.split('Agent instruction:')[1];
+        const instructionEnd = nextPart ? nextPart.indexOf('\n\n') : -1;
+        if (instructionEnd !== -1) {
+          bodyText = nextPart.slice(instructionEnd + 2).trim();
+        } else {
+          bodyText = '';
+        }
+      }
     }
+
+    const badgeLabel = attachmentLine
+      ? attachmentLine.split('|')[0].replace(/\[Attachment:\s*|\s*\]/g, '').trim()
+      : null;
 
     return (
       <View style={styles.userMessageRow}>
         <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
-          {attachmentLine && (
+          {badgeLabel && (
             <View style={styles.userAttachmentBadge}>
               <Icon name="attach" size={13} color="#ffffff" />
               <Text style={styles.userAttachmentText} numberOfLines={2}>
-                {attachmentLine.replace(/\[Attachment:\s*|\s*\]/g, '')}
+                {badgeLabel}
               </Text>
             </View>
           )}
@@ -526,34 +539,45 @@ export default function ChatScreen() {
     const trimmed = inputText.trim();
     if ((!trimmed && attachments.length === 0) || !profile || sending) return;
 
-    let messageText = trimmed;
-    if (attachments.length > 0) {
-      const summaryList = attachments
-        .map((a) => `[Attachment: ${a.name} (${a.mimeType || 'file'}${a.size ? `, ${Math.round(a.size / 1024)}KB` : ''})]`)
-        .join('\n');
-      messageText = trimmed ? `${summaryList}\n\n${trimmed}` : summaryList;
-    }
-
-    const optimisticId = `user-opt-${Date.now()}`;
-    const optimisticMsg = {
-      id: optimisticId,
-      role: 'user',
-      text: messageText,
-      timestamp: Date.now()
-    };
-
-    setMessages((prev) => [...prev, optimisticMsg]);
+    setSending(true);
+    const pendingAttachments = [...attachments];
     setInputText('');
     setAttachments([]);
-    setSending(true);
-    setTimeout(scrollToBottom, 60);
 
     try {
+      let messageText = trimmed;
+      if (pendingAttachments.length > 0) {
+        const uploadedList = [];
+        for (const att of pendingAttachments) {
+          const res = await uploadFile(profile, att);
+          uploadedList.push(res);
+        }
+
+        const summaryList = uploadedList
+          .map((u) => `[Attachment: ${u.originalName} | Saved to: ${u.path} (${u.mimeType}, ${Math.round(u.size / 1024)}KB)]\nAgent instruction: The user attached ${u.originalName}. It is stored at "${u.path}". Please inspect and view this file.`)
+          .join('\n\n');
+
+        messageText = trimmed ? `${summaryList}\n\n${trimmed}` : summaryList;
+      }
+
+      const optimisticId = `user-opt-${Date.now()}`;
+      const optimisticMsg = {
+        id: optimisticId,
+        role: 'user',
+        text: messageText,
+        timestamp: Date.now()
+      };
+
+      setMessages((prev) => [...prev, optimisticMsg]);
+      setTimeout(scrollToBottom, 60);
+
       await sendPrompt(profile, messageText);
       await loadMessages();
       setTimeout(scrollToBottom, 150);
     } catch (err) {
       alert(err.message || 'Failed to send message');
+      setAttachments(pendingAttachments);
+      setInputText(trimmed);
     } finally {
       setSending(false);
     }

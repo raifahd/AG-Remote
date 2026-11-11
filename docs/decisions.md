@@ -203,3 +203,15 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Elevated composer dynamically to `kHeight + 10` on keyboard open and restored smoothly to `Math.max(insets.bottom, 16) + 78` on keyboard hide.
   - Because `chatBody` has `flex: 1`, it contracts smoothly as the composer rises, keeping the messages feed and auto-scrolled content fully visible above the keyboard.
   - Updated `TabBar` to listen to `keyboardWillShow` to vanish instantly upon input focus without lag, and updated `_layout.js` scene style to match dynamic theme.
+
+## 2026-11-11: Full Binary File and Image Transfer Pipeline
+- **End-to-End File Delivery:**
+  - Added authenticated endpoint `POST /v1/upload` in `BridgeServer.ts` protected by Bearer token authentication.
+  - Files are saved to `.ag-remote/uploads/` with timestamp prefixes and strict path sanitization (`path.basename` and regex scrubbing) preventing directory traversal.
+  - Increased `express.json` limit to `30mb` to accommodate large high-resolution camera photos and PDFs.
+  - Supports both base64 JSON payload and streaming binary upload.
+- **Mobile Client Integration:**
+  - Implemented `uploadFile(profile, asset)` in `apps/mobile/src/api.js` using standard `fetch` + `FileReader.readAsDataURL` available in Expo Go without extra dependencies.
+  - Updated `handleSend` in `chat.js` to upload all selected attachments before prompt dispatch, rolling back state if the upload fails to protect drafted messages.
+  - Formatted prompt message with absolute file system paths on the host computer (`Saved to: <path>`), instructing the agent to directly inspect and view the uploaded image or document using `read_file`.
+  - Added `.ag-remote/` to `.gitignore` to prevent tracking uploaded files.

@@ -6,4 +6,5 @@ build/
 scratch/
 .env*
 !.env.example
+.ag-remote/
 AG Remote Agent Companion/

@@ -1,5 +1,7 @@
 import http from 'http';
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import express, { Request, Response, NextFunction } from 'express';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
@@ -8,6 +10,7 @@ import {
   ApproveRequestSchema,
   RejectRequestSchema,
   QuietHoursSettingsSchema,
+  UploadPayloadSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -21,10 +24,12 @@ export interface ServerConfig {
   host: string;
   version: string;
   adapterMode: 'sdk' | 'cdp' | 'fake';
+  uploadDir?: string;
 }
 
 export class BridgeServer {
   private readonly config: ServerConfig;
+  private readonly uploadDir: string;
   private readonly adapter: AgentAdapter;
   private readonly tokenManager: TokenManager;
   private readonly rateLimiter: RateLimiter;
@@ -43,6 +48,8 @@ export class BridgeServer {
     notifier?: NtfyNotifier | undefined
   ) {
     this.config = config;
+    this.uploadDir = config.uploadDir || path.join(process.cwd(), '.ag-remote', 'uploads');
+    fs.mkdirSync(this.uploadDir, { recursive: true });
     this.adapter = adapter;
     this.tokenManager = tokenManager;
     this.rateLimiter = rateLimiter;
@@ -52,7 +59,7 @@ export class BridgeServer {
   }
 
   private configureApp(): void {
-    this.app.use(express.json({ limit: '1mb' }));
+    this.app.use(express.json({ limit: '30mb' }));
 
     this.app.get('/health', (_req: Request, res: Response) => {
       res.json(this.buildHealthResponse());
@@ -99,6 +106,65 @@ export class BridgeServer {
         }
         await this.adapter.sendPrompt(parsed.data.text);
         res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.post('/upload', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        if (req.is('application/json')) {
+          const parsed = UploadPayloadSchema.safeParse(req.body);
+          if (!parsed.success) {
+            res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+            return;
+          }
+          const safeOriginalName = path.basename(parsed.data.filename).replace(/[^a-zA-Z0-9._-]/g, '_');
+          const filename = `${Date.now()}_${safeOriginalName}`;
+          const targetPath = path.join(this.uploadDir, filename);
+          const buffer = Buffer.from(parsed.data.dataBase64, 'base64');
+          await fs.promises.writeFile(targetPath, buffer);
+          res.json({
+            ok: true,
+            filename,
+            originalName: parsed.data.filename,
+            path: targetPath,
+            size: buffer.length,
+            mimeType: parsed.data.mimeType
+          });
+          return;
+        }
+
+        const rawHeaderName = req.headers['x-filename'] || req.query.filename;
+        if (!rawHeaderName || typeof rawHeaderName !== 'string') {
+          res.status(400).json(this.makeError('INVALID_BODY', 'Missing filename'));
+          return;
+        }
+        const decodedName = decodeURIComponent(rawHeaderName);
+        const safeOriginalName = path.basename(decodedName).replace(/[^a-zA-Z0-9._-]/g, '_');
+        const filename = `${Date.now()}_${safeOriginalName}`;
+        const targetPath = path.join(this.uploadDir, filename);
+
+        const writeStream = fs.createWriteStream(targetPath);
+        let bytesWritten = 0;
+        req.on('data', (chunk: Buffer) => {
+          bytesWritten += chunk.length;
+        });
+        req.pipe(writeStream);
+        await new Promise<void>((resolve, reject) => {
+          writeStream.on('finish', () => resolve());
+          writeStream.on('error', reject);
+          req.on('error', reject);
+        });
+
+        res.json({
+          ok: true,
+          filename,
+          originalName: decodedName,
+          path: targetPath,
+          size: bytesWritten,
+          mimeType: req.headers['content-type'] || 'application/octet-stream'
+        });
       } catch (err) {
         next(err);
       }

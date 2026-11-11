@@ -136,4 +136,23 @@ export const PairingPayloadSchema = z.object({
 
 export type PairingPayload = z.infer<typeof PairingPayloadSchema>;
 
+export const UploadPayloadSchema = z.object({
+  filename: z.string().min(1).max(255),
+  mimeType: z.string().default('application/octet-stream'),
+  dataBase64: z.string().min(1)
+}).strict();
+
+export type UploadPayload = z.infer<typeof UploadPayloadSchema>;
+
+export const UploadResponseSchema = z.object({
+  ok: z.literal(true),
+  filename: z.string(),
+  originalName: z.string(),
+  path: z.string(),
+  size: z.number().int().nonnegative(),
+  mimeType: z.string()
+}).strict();
+
+export type UploadResponse = z.infer<typeof UploadResponseSchema>;
+
 

@@ -165,5 +165,34 @@ describe('BridgeServer integration', () => {
     expect(invalidRes.status).toBe(400);
     expect(invalidRes.data.code).toBe('INVALID_BODY');
   });
+
+  it('handles file uploads with authentication and path safety at /v1/upload', async () => {
+    const unauthRes = await request('POST', '/v1/upload', undefined, {
+      filename: 'sample.txt',
+      mimeType: 'text/plain',
+      dataBase64: Buffer.from('hello world').toString('base64')
+    });
+    expect(unauthRes.status).toBe(401);
+
+    const invalidRes = await request('POST', '/v1/upload', validToken, {
+      filename: ''
+    });
+    expect(invalidRes.status).toBe(400);
+
+    const validContent = 'test file content from phone';
+    const uploadRes = await request('POST', '/v1/upload', validToken, {
+      filename: '../../../unsafe_name.txt',
+      mimeType: 'text/plain',
+      dataBase64: Buffer.from(validContent).toString('base64')
+    });
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.data.ok).toBe(true);
+    expect(uploadRes.data.path).toBeDefined();
+    expect(uploadRes.data.filename).not.toContain('..');
+    expect(fs.existsSync(uploadRes.data.path)).toBe(true);
+    expect(fs.readFileSync(uploadRes.data.path, 'utf8')).toBe(validContent);
+
+    fs.unlinkSync(uploadRes.data.path);
+  });
 });
 
