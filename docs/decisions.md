@@ -246,3 +246,18 @@ Record of decisions, discoveries, and rationale for AG Remote.
     - Live monospace elapsed timer (`formatTime(seconds)`).
     - Dynamic cycling status phrases with smooth cross-fade transitions.
     - 3-dot bouncing wave animation.
+
+## 2026-11-11: Desktop-Style File Links, Slower Working Transitions, Sending Bar & Follow-up Prompting
+- **Desktop Antigravity File Links:**
+  - Extended markdown `parseInline` regex to recognize `[label](file:///...)` and bare `file:///...` URIs.
+  - Extracted clean basenames and optional line ranges (`#(L\d+(?:-L?\d+)?)`) from URIs and labels, formatting them as clean inline chips (`📄 filename.ext:lines`) with accent styling rather than displaying raw system paths.
+- **Calm, Slower Working Status Transitions:**
+  - Increased phrase rotation interval from 5500ms to 8000ms.
+  - Separated the fade-out and fade-in animations so `phraseIndex` updates cleanly during complete fade-out (opacity 0) before fading smoothly back in over 600ms, eliminating abrupt text jumps.
+- **Sending Progress & Duplicate Send Protection:**
+  - Added `sendingStatus` state reporting upload progress (`Uploading (i/total): name...`) and agent delivery status (`Delivering prompt to agent...`).
+  - Rendered a progress pill with `ActivityIndicator` above the composer while sending is in progress.
+  - Disabled the input field, attachment picker, and send buttons while `sending` is true to prevent duplicate dispatches.
+- **Simultaneous Stop and Follow-up Prompt Controls:**
+  - When the agent is generating (`isWorking === true`), the composer now displays both the Stop button (red square) and the Send button side-by-side.
+  - The Send button is enabled as soon as the user enters text or adds an attachment (`canSend`), allowing queued follow-up prompts into the active cascade without interrupting the ongoing run.

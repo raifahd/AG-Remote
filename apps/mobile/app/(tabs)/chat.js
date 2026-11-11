@@ -10,7 +10,8 @@ import {
   Keyboard,
   Platform,
   Animated,
-  Easing
+  Easing,
+  ActivityIndicator
 } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -48,36 +49,101 @@ function CodeSnippet({ code, lang = 'code', theme }) {
 
 function parseInline(text, theme, lineKey) {
   if (!text) return [];
-  const singleTick = String.fromCharCode(96);
-  const parts = text.split(singleTick);
+
+  const linkRegex = /\[([^\]]+)\]\((file:\/\/\/[^\)]+|https?:\/\/[^\)]+)\)|(file:\/\/\/[^\s\)\],]+)/g;
+  const segments = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = linkRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      segments.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+    }
+
+    if (match[3]) {
+      const bareUrl = match[3];
+      const urlPath = decodeURIComponent(bareUrl.replace(/^file:\/\//, ''));
+      const rawName = urlPath.split('/').pop()?.split('\\').pop() || 'file';
+      const cleanName = rawName.split('#')[0];
+      const fragment = (bareUrl.match(/#(L\d+(?:-L?\d+)?)/) || [])[1];
+      const label = fragment ? `${cleanName}:${fragment.replace(/L/g, '')}` : cleanName;
+      segments.push({ type: 'file', label, url: bareUrl });
+    } else {
+      const labelText = match[1];
+      const url = match[2];
+      if (url.startsWith('file:///')) {
+        const rawLabel = labelText.replace(/`/g, '').trim();
+        const urlPath = decodeURIComponent(url.replace(/^file:\/\//, ''));
+        const urlFileName = (urlPath.split('/').pop()?.split('\\').pop() || '').split('#')[0];
+        const base = rawLabel.split('/').pop()?.split('\\').pop() || rawLabel;
+        const cleanBase = (base.includes('.') ? base : (urlFileName || base)).split('#')[0];
+        const fragment = (url.match(/#(L\d+(?:-L?\d+)?)/) || rawLabel.match(/#(L\d+(?:-L?\d+)?)/) || [])[1];
+        const label = fragment ? `${cleanBase}:${fragment.replace(/L/g, '')}` : cleanBase;
+        segments.push({ type: 'file', label, url });
+      } else {
+        segments.push({ type: 'web', label: labelText, url });
+      }
+    }
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    segments.push({ type: 'text', content: text.slice(lastIndex) });
+  }
+
   const elements = [];
+  for (let sIdx = 0; sIdx < segments.length; sIdx++) {
+    const seg = segments[sIdx];
+    const segKey = `${lineKey}-s-${sIdx}`;
 
-  for (let pIdx = 0; pIdx < parts.length; pIdx++) {
-    const part = parts[pIdx];
-    if (!part) continue;
-
-    if (pIdx % 2 === 1) {
+    if (seg.type === 'file') {
       elements.push(
         <Text
-          key={`${lineKey}-ic-${pIdx}`}
-          style={[styles.inlineCode, { color: theme.accent }]}
+          key={segKey}
+          style={[styles.fileLinkInline, { color: theme.accent }]}
         >
-          {part}
+          {` 📄 ${seg.label} `}
+        </Text>
+      );
+    } else if (seg.type === 'web') {
+      elements.push(
+        <Text
+          key={segKey}
+          style={[styles.webLinkInline, { color: theme.accent }]}
+        >
+          {seg.label}
         </Text>
       );
     } else {
-      const bParts = part.split('**');
-      for (let bIdx = 0; bIdx < bParts.length; bIdx++) {
-        const bp = bParts[bIdx];
-        if (!bp) continue;
-        elements.push(
-          <Text
-            key={`${lineKey}-bp-${pIdx}-${bIdx}`}
-            style={bIdx % 2 === 1 ? styles.boldText : undefined}
-          >
-            {bp}
-          </Text>
-        );
+      const singleTick = String.fromCharCode(96);
+      const parts = seg.content.split(singleTick);
+      for (let pIdx = 0; pIdx < parts.length; pIdx++) {
+        const part = parts[pIdx];
+        if (!part) continue;
+        if (pIdx % 2 === 1) {
+          elements.push(
+            <Text
+              key={`${segKey}-ic-${pIdx}`}
+              style={[styles.inlineCode, { color: theme.accent }]}
+            >
+              {part}
+            </Text>
+          );
+        } else {
+          const bParts = part.split('**');
+          for (let bIdx = 0; bIdx < bParts.length; bIdx++) {
+            const bp = bParts[bIdx];
+            if (!bp) continue;
+            elements.push(
+              <Text
+                key={`${segKey}-bp-${pIdx}-${bIdx}`}
+                style={bIdx % 2 === 1 ? styles.boldText : undefined}
+              >
+                {bp}
+              </Text>
+            );
+          }
+        }
       }
     }
   }
@@ -298,20 +364,22 @@ function AgentWorkingIndicator({ theme }) {
     }, 1000);
 
     const phraseTimer = setInterval(() => {
-      Animated.sequence([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true
-        }),
+      Animated.timing(fadeAnim, {
+        toValue: 0,
+        duration: 500,
+        easing: Easing.inOut(Easing.ease),
+        useNativeDriver: true
+      }).start(({ finished }) => {
+        if (!finished) return;
+        setPhraseIndex((prev) => (prev + 1) % WORKING_PHRASES.length);
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 250,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
           useNativeDriver: true
-        })
-      ]).start();
-      setPhraseIndex((prev) => (prev + 1) % WORKING_PHRASES.length);
-    }, 2800);
+        }).start();
+      });
+    }, 8000);
 
     const pulse = Animated.loop(
       Animated.sequence([
@@ -571,6 +639,7 @@ export default function ChatScreen() {
   const [inputText, setInputText] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [sending, setSending] = useState(false);
+  const [sendingStatus, setSendingStatus] = useState('');
   const [agentStatus, setAgentStatus] = useState('idle');
   const [wsConnected, setWsConnected] = useState(false);
   const [blinker, setBlinker] = useState(true);
@@ -725,6 +794,7 @@ export default function ChatScreen() {
     if ((!trimmed && attachments.length === 0) || !profile || sending) return;
 
     setSending(true);
+    setSendingStatus(attachments.length > 0 ? 'Uploading attachments...' : 'Sending prompt...');
     const pendingAttachments = [...attachments];
     setInputText('');
     setAttachments([]);
@@ -733,7 +803,9 @@ export default function ChatScreen() {
       let messageText = trimmed;
       if (pendingAttachments.length > 0) {
         const uploadedList = [];
-        for (const att of pendingAttachments) {
+        for (let i = 0; i < pendingAttachments.length; i++) {
+          const att = pendingAttachments[i];
+          setSendingStatus(`Uploading (${i + 1}/${pendingAttachments.length}): ${att.name || 'file'}...`);
           const res = await uploadFile(profile, att);
           uploadedList.push(res);
         }
@@ -744,6 +816,8 @@ export default function ChatScreen() {
 
         messageText = trimmed ? `${summaryList}\n\n${trimmed}` : summaryList;
       }
+
+      setSendingStatus('Delivering prompt to agent...');
 
       const optimisticId = `user-opt-${Date.now()}`;
       const optimisticMsg = {
@@ -765,6 +839,7 @@ export default function ChatScreen() {
       setInputText(trimmed);
     } finally {
       setSending(false);
+      setSendingStatus('');
     }
   };
 
@@ -779,6 +854,7 @@ export default function ChatScreen() {
   };
 
   const isWorking = agentStatus === 'generating';
+  const canSend = !sending && (Boolean(inputText.trim()) || attachments.length > 0);
 
   const renderItem = useCallback(
     ({ item }) => <ChatMessageBubble item={item} theme={theme} />,
@@ -860,6 +936,23 @@ export default function ChatScreen() {
           }
         ]}
       >
+        {sending && (
+          <View
+            style={[
+              styles.sendingBar,
+              {
+                backgroundColor: theme.surface,
+                borderColor: theme.border
+              }
+            ]}
+          >
+            <ActivityIndicator size="small" color={theme.accent} />
+            <Text style={[styles.sendingText, { color: theme.text }]} numberOfLines={1}>
+              {sendingStatus || 'Sending prompt...'}
+            </Text>
+          </View>
+        )}
+
         {attachments.length > 0 && (
           <View style={styles.attachmentStrip}>
             <ScrollView
@@ -892,6 +985,7 @@ export default function ChatScreen() {
                   <TouchableOpacity
                     style={styles.attachmentRemoveBtn}
                     onPress={() => handleRemoveAttachment(index)}
+                    disabled={sending}
                     activeOpacity={0.7}
                   >
                     <Icon name="x" size={13} color={theme.muted} />
@@ -914,6 +1008,7 @@ export default function ChatScreen() {
           <TouchableOpacity
             style={styles.attachButton}
             onPress={handlePickDocument}
+            disabled={sending}
             activeOpacity={0.7}
           >
             <Icon name="attach" size={20} color={attachments.length > 0 ? theme.accent : theme.muted} />
@@ -927,40 +1022,56 @@ export default function ChatScreen() {
                 textAlignVertical: 'center'
               }
             ]}
-            placeholder="Message your agent"
+            placeholder={isWorking ? 'Give follow-up prompt...' : 'Message your agent'}
             placeholderTextColor={theme.subtle}
             value={inputText}
             onChangeText={setInputText}
             multiline
             maxLength={2000}
+            editable={!sending}
             onFocus={() => {
               setTimeout(scrollToBottom, 150);
             }}
           />
-          {isWorking ? (
-            <TouchableOpacity
-              style={[styles.sendButton, styles.stopButton, { backgroundColor: theme.danger }]}
-              onPress={handleStop}
-              activeOpacity={0.8}
-            >
-              <View style={styles.stopSquare} />
-            </TouchableOpacity>
-          ) : (
+          <View style={styles.composerActions}>
+            {isWorking && (
+              <TouchableOpacity
+                style={[styles.composerBtn, styles.stopBtn, { backgroundColor: theme.danger }]}
+                onPress={handleStop}
+                disabled={sending}
+                activeOpacity={0.8}
+              >
+                <View style={styles.stopSquare} />
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={[
-                styles.sendButton,
+                styles.composerBtn,
+                isWorking ? styles.sendBtnWorking : styles.sendBtnIdle,
                 {
-                  backgroundColor: (inputText.trim() || attachments.length > 0) ? theme.accent : `${theme.accent}90`,
-                  opacity: (inputText.trim() || attachments.length > 0) ? 1 : 0.65
+                  backgroundColor: canSend
+                    ? theme.accent
+                    : (isWorking
+                        ? (theme.mode === 'dark' ? '#383838' : '#e4e4e7')
+                        : `${theme.accent}65`),
+                  opacity: canSend ? 1 : (isWorking ? 0.45 : 0.6)
                 }
               ]}
               onPress={handleSend}
-              disabled={!inputText.trim() && attachments.length === 0}
+              disabled={!canSend}
               activeOpacity={0.8}
             >
-              <Icon name="send" size={19} color="#ffffff" />
+              {sending ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Icon
+                  name="send"
+                  size={isWorking ? 16 : 19}
+                  color={canSend ? '#ffffff' : (isWorking ? theme.muted : '#ffffff')}
+                />
+              )}
             </TouchableOpacity>
-          )}
+          </View>
         </View>
       </Animated.View>
     </View>
@@ -1172,6 +1283,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: fontMono
   },
+  fileLinkInline: {
+    fontFamily: fontMedium,
+    fontSize: 12,
+    textDecorationLine: 'underline'
+  },
+  webLinkInline: {
+    fontFamily: fontMedium,
+    fontSize: 12,
+    textDecorationLine: 'underline'
+  },
   blinker: {
     fontSize: 13,
     fontFamily: fontBold
@@ -1344,11 +1465,52 @@ const styles = StyleSheet.create({
     fontFamily: fontMedium
   },
   stopButton: {},
+  composerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  composerBtn: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  sendBtnIdle: {
+    width: 39,
+    height: 39,
+    borderRadius: 9999
+  },
+  sendBtnWorking: {
+    width: 34,
+    height: 34,
+    borderRadius: 17
+  },
+  stopBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17
+  },
   stopSquare: {
-    width: 12,
-    height: 12,
+    width: 10,
+    height: 10,
     backgroundColor: '#ffffff',
-    borderRadius: 3
+    borderRadius: 2
+  },
+  sendingBar: {
+    width: '100%',
+    maxWidth: 440,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6
+  },
+  sendingText: {
+    fontSize: 11,
+    fontFamily: fontMedium,
+    flex: 1
   },
   listContentEmpty: {
     flexGrow: 1,
