@@ -289,3 +289,23 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Added events `session_created` and `active_session_changed`. Enriched `run_finished`, `approval_requested`, and `message_appended` with `sessionId` and `sessionTitle`.
   - Push notifications now include the conversation title in the notification title and body.
 
+## 2026-11-11: Mobile App & Web Client Multi-Conversation Browsing and Switching (Phase 5)
+- **Mobile Session API & Schema Validation:**
+  - Implemented `fetchSessions(profile)`, `createSession(profile, text)`, and `focusSession(profile, sessionId)` in `apps/mobile/src/api.js`.
+  - Validated API responses using Zod schemas (`SessionSummarySchema`), returning typed session metadata safely to UI components.
+  - Scoped message retrieval (`fetchMessages`) and prompt dispatch (`sendPrompt`, `sendStop`) with optional `sessionId` parameters.
+- **Workspaces Tab Live Session Management:**
+  - Transformed the Workspaces tab from a static screen into a live conversation hub for the connected IDE workspace.
+  - Displays conversation cards with title, status badges (`RUNNING`, `APPROVAL`, `IDLE`), step counts, relative timestamps, and workspace indicators.
+  - Tapping a conversation calls `focusSession` on the bridge and navigates seamlessly to the Chat tab with `sessionId`.
+  - Added "+ New" modal for creating fresh conversations with optional initial prompts.
+- **Chat Tab Quick-Switcher & Session Scoping:**
+  - Added an interactive session bar below `TopBar` displaying the active conversation title, live status dot, and quick "+ New" button.
+  - Tapping the session bar opens a slide-over Quick-Switcher modal listing all conversations with live status indicators, allowing instantaneous switching without leaving the chat feed.
+  - All prompts, message streams, and abort actions automatically target the selected session ID.
+  - WebSocket listeners update the active session title and status when `active_session_changed` or `session_created` events fire from the IDE.
+- **Web Client Multi-Conversation Dropdown:**
+  - Added `.session-bar` to `packages/bridge/src/webApp.ts` with a styled `<select id="sessionSelect">` and `+ New` button.
+  - Populates session options dynamically via `GET /v1/sessions`, switches focus on change via `POST /v1/sessions/:id/focus`, and sends prompts scoped via `POST /v1/sessions/:id/prompt`.
+
+

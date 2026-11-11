@@ -244,6 +244,51 @@ export function renderWebClientHtml(): string {
       word-break: break-all;
       margin-bottom: 12px;
     }
+    .session-bar {
+      padding: 8px 18px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .session-selector-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 0;
+    }
+    .session-select {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 10px;
+      border-radius: 8px;
+      flex: 1;
+      min-width: 0;
+      outline: none;
+      cursor: pointer;
+    }
+    .btn-new-session {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-new-session:hover {
+      background: var(--border-subtle);
+    }
     .approval-actions {
       display: flex;
       gap: 10px;
@@ -638,6 +683,14 @@ export function renderWebClientHtml(): string {
     </div>
   </header>
 
+  <div class="session-bar" id="sessionBar">
+    <div class="session-selector-wrap">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <select id="sessionSelect" class="session-select"><option value="">Active Conversation</option></select>
+    </div>
+    <button id="btnNewSession" class="btn-new-session">+ New</button>
+  </div>
+
   <div id="degradedBanner" class="system-banner banner-degraded" style="display:none;">
     <span class="banner-icon">⚠</span>
     <span id="degradedText">Bridge running in degraded mode</span>
@@ -878,8 +931,59 @@ export function renderWebClientHtml(): string {
       return renderedBlocks.join('');
     }
 
+    let currentSessionId = null;
+
+    async function refreshSessions() {
+      const sessions = await apiCall('/v1/sessions');
+      if (!Array.isArray(sessions)) return;
+
+      const select = document.getElementById('sessionSelect');
+      const prevVal = currentSessionId || select.value;
+      select.innerHTML = '';
+
+      sessions.forEach(function(s) {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = (s.title || 'Untitled') + (s.status === 'generating' ? ' (running)' : '');
+        select.appendChild(opt);
+      });
+
+      if (prevVal && sessions.some(function(s) { return s.id === prevVal; })) {
+        select.value = prevVal;
+        currentSessionId = prevVal;
+      } else if (sessions.length > 0) {
+        currentSessionId = sessions[0].id;
+        select.value = sessions[0].id;
+      }
+    }
+
+    async function handleSessionChange() {
+      const select = document.getElementById('sessionSelect');
+      const targetId = select.value;
+      if (!targetId || targetId === currentSessionId) return;
+      currentSessionId = targetId;
+      await apiCall('/v1/sessions/' + encodeURIComponent(targetId) + '/focus', 'POST');
+      refreshState();
+      refreshMessages();
+    }
+
+    async function handleNewSession() {
+      const promptText = window.prompt('Enter initial prompt for new conversation (optional):');
+      if (promptText === null) return;
+      const res = await apiCall('/v1/sessions', 'POST', { text: promptText.trim() || undefined });
+      if (res && res.sessionId) {
+        currentSessionId = res.sessionId;
+        await refreshSessions();
+        refreshState();
+        refreshMessages();
+      }
+    }
+
     async function refreshMessages() {
-      const messages = await apiCall('/v1/messages?limit=50');
+      const url = currentSessionId
+        ? '/v1/sessions/' + encodeURIComponent(currentSessionId) + '/messages?limit=50'
+        : '/v1/messages?limit=50';
+      const messages = await apiCall(url);
       if (!Array.isArray(messages)) return;
 
       const container = document.getElementById('messagesContainer');
@@ -968,7 +1072,10 @@ export function renderWebClientHtml(): string {
       document.getElementById('btnSend').disabled = true;
       latestStatus = 'generating';
       updateUI({ status: 'generating', pendingApproval: currentApproval });
-      const res = await apiCall('/v1/prompt', 'POST', { text });
+      const url = currentSessionId
+        ? '/v1/sessions/' + encodeURIComponent(currentSessionId) + '/prompt'
+        : '/v1/prompt';
+      const res = await apiCall(url, 'POST', { text });
       document.getElementById('btnSend').disabled = false;
       if (res && res.ok) {
         input.value = '';
@@ -1002,7 +1109,10 @@ export function renderWebClientHtml(): string {
     }
 
     async function handleStop() {
-      await apiCall('/v1/stop', 'POST');
+      const url = currentSessionId
+        ? '/v1/stop?sessionId=' + encodeURIComponent(currentSessionId)
+        : '/v1/stop';
+      await apiCall(url, 'POST');
       refreshState();
     }
 
@@ -1013,6 +1123,8 @@ export function renderWebClientHtml(): string {
     document.getElementById('approveBtn').addEventListener('click', handleApprove);
     document.getElementById('rejectBtn').addEventListener('click', handleReject);
     document.getElementById('btnStop').addEventListener('click', handleStop);
+    document.getElementById('sessionSelect').addEventListener('change', handleSessionChange);
+    document.getElementById('btnNewSession').addEventListener('click', handleNewSession);
 
     function initWebSocket() {
       if (!token) return;
@@ -1029,6 +1141,7 @@ export function renderWebClientHtml(): string {
 
       ws.onmessage = () => {
         refreshState();
+        refreshSessions();
         refreshMessages();
       };
 
@@ -1047,6 +1160,7 @@ export function renderWebClientHtml(): string {
     } else {
       checkDegradedStatus();
       refreshState();
+      refreshSessions();
       refreshMessages();
       initWebSocket();
     }

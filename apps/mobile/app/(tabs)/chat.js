@@ -13,14 +13,24 @@ import {
   Easing,
   ActivityIndicator
 } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
+import StatusBadge from '../../src/components/StatusBadge.js';
 import { getActiveProfile, getProfiles, setActiveProfileId } from '../../src/storage.js';
-import { fetchMessages, fetchState, sendPrompt, sendStop, uploadFile } from '../../src/api.js';
+import {
+  fetchMessages,
+  fetchState,
+  fetchSessions,
+  focusSession,
+  createSession,
+  sendPrompt,
+  sendStop,
+  uploadFile
+} from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
 function CodeSnippet({ code, lang = 'code', theme }) {
@@ -632,6 +642,7 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
 
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
   const { theme, isDark } = useTheme();
   const [profile, setProfile] = useState(null);
   const [allProfiles, setAllProfiles] = useState([]);
@@ -646,10 +657,27 @@ export default function ChatScreen() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(params?.sessionId || null);
+  const [currentSessionTitle, setCurrentSessionTitle] = useState(params?.sessionTitle || null);
+  const [sessionsModalVisible, setSessionsModalVisible] = useState(false);
+  const [newSessionModalVisible, setNewSessionModalVisible] = useState(false);
+  const [newSessionText, setNewSessionText] = useState('');
+  const [creatingSession, setCreatingSession] = useState(false);
+
   const flatListRef = useRef(null);
   const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
+
+  useEffect(() => {
+    if (params?.sessionId && params.sessionId !== currentSessionId) {
+      setCurrentSessionId(params.sessionId);
+      if (params.sessionTitle) {
+        setCurrentSessionTitle(params.sessionTitle);
+      }
+    }
+  }, [params?.sessionId, params?.sessionTitle]);
 
   const reversedMessages = useMemo(() => {
     return messages && messages.length > 0 ? [...messages].reverse() : [];
@@ -716,7 +744,7 @@ export default function ChatScreen() {
     };
   }, [insets.bottom, messages]);
 
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (targetSessionId) => {
     try {
       const [active, profilesList] = await Promise.all([
         getActiveProfile(),
@@ -725,15 +753,33 @@ export default function ChatScreen() {
       setProfile(active);
       setAllProfiles(profilesList || []);
       if (active) {
-        const [list, st] = await Promise.all([
-          fetchMessages(active, 50).catch(() => []),
+        const [sessList, st] = await Promise.all([
+          fetchSessions(active).catch(() => []),
           fetchState(active).catch(() => null)
         ]);
+        if (sessList) {
+          setSessions(sessList);
+        }
+
+        const sid = targetSessionId !== undefined ? targetSessionId : currentSessionId;
+        const resolvedSid = sid || st?.activeSessionId || (sessList && sessList[0]?.id) || null;
+        if (resolvedSid && resolvedSid !== currentSessionId) {
+          setCurrentSessionId(resolvedSid);
+        }
+
+        if (resolvedSid && sessList) {
+          const found = sessList.find((s) => s.id === resolvedSid);
+          if (found) {
+            setCurrentSessionTitle(found.title || 'Untitled');
+          }
+        }
+
+        const list = await fetchMessages(active, 50, resolvedSid || undefined).catch(() => []);
         if (list) setMessages(list);
         if (st?.status) setAgentStatus(st.status);
       }
     } catch {}
-  }, []);
+  }, [currentSessionId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -745,7 +791,15 @@ export default function ChatScreen() {
     if (!profile) return;
     const ws = new BridgeWebSocketClient(
       profile,
-      () => {
+      (event) => {
+        if (event && event.type === 'active_session_changed' && event.sessionId) {
+          setCurrentSessionId(event.sessionId);
+          if (event.title) {
+            setCurrentSessionTitle(event.title);
+          }
+          loadMessages(event.sessionId);
+          return;
+        }
         loadMessages();
       },
       (connected) => {
@@ -758,6 +812,39 @@ export default function ChatScreen() {
   const scrollToBottom = () => {
     if (messages && messages.length > 0) {
       flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }
+  };
+
+  const handleSwitchSession = async (session) => {
+    if (!profile) return;
+    setCurrentSessionId(session.id);
+    setCurrentSessionTitle(session.title || 'Untitled');
+    setSessionsModalVisible(false);
+    try {
+      await focusSession(profile, session.id);
+    } catch {}
+    await loadMessages(session.id);
+    setTimeout(scrollToBottom, 60);
+  };
+
+  const handleCreateSession = async () => {
+    if (!profile) return;
+    setCreatingSession(true);
+    try {
+      const res = await createSession(profile, newSessionText.trim() || undefined);
+      setNewSessionModalVisible(false);
+      setNewSessionText('');
+      if (res?.sessionId) {
+        setCurrentSessionId(res.sessionId);
+        setCurrentSessionTitle(newSessionText.trim() || 'New Conversation');
+        await loadMessages(res.sessionId);
+      } else {
+        await loadMessages();
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to create conversation');
+    } finally {
+      setCreatingSession(false);
     }
   };
 
@@ -830,8 +917,8 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, optimisticMsg]);
       setTimeout(scrollToBottom, 60);
 
-      await sendPrompt(profile, messageText);
-      await loadMessages();
+      await sendPrompt(profile, messageText, currentSessionId || undefined);
+      await loadMessages(currentSessionId || undefined);
       setTimeout(scrollToBottom, 150);
     } catch (err) {
       alert(err.message || 'Failed to send message');
@@ -846,8 +933,8 @@ export default function ChatScreen() {
   const handleStop = async () => {
     if (!profile) return;
     try {
-      await sendStop(profile);
-      await loadMessages();
+      await sendStop(profile, currentSessionId || undefined);
+      await loadMessages(currentSessionId || undefined);
     } catch (err) {
       alert(err.message || 'Failed to stop agent');
     }
@@ -868,6 +955,29 @@ export default function ChatScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <TopBar title={profile?.name || 'acme / dashboard'} status={statusLabel} />
+
+      <View style={[styles.sessionBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <TouchableOpacity
+          style={styles.sessionSelector}
+          onPress={() => setSessionsModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.sessionDot, { backgroundColor: isWorking ? theme.success : theme.accent }]} />
+          <Text style={[styles.sessionTitleText, { color: theme.text }]} numberOfLines={1}>
+            {currentSessionTitle || 'Active Conversation'}
+          </Text>
+          <Icon name="chevron" size={14} color={theme.muted} />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.newSessionBtn, { backgroundColor: theme.raised, borderColor: theme.border }]}
+          onPress={() => setNewSessionModalVisible(true)}
+          activeOpacity={0.7}
+        >
+          <Icon name="plus" size={14} color={theme.accent} />
+          <Text style={[styles.newSessionBtnText, { color: theme.accent }]}>New</Text>
+        </TouchableOpacity>
+      </View>
 
       <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
         <FlatList
@@ -1074,6 +1184,130 @@ export default function ChatScreen() {
           </View>
         </View>
       </Animated.View>
+
+      <Modal
+        visible={sessionsModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSessionsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>Conversations</Text>
+              <TouchableOpacity onPress={() => setSessionsModalVisible(false)}>
+                <Icon name="x" size={20} color={theme.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 360 }}>
+              {sessions.length === 0 ? (
+                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                  <Text style={{ color: theme.muted, fontSize: 12 }}>No conversations found</Text>
+                </View>
+              ) : (
+                sessions.map((s) => {
+                  const isSelected = s.id === currentSessionId;
+                  const statusTone = s.status === 'generating' ? 'running' : s.status === 'awaiting_approval' ? 'warn' : 'muted';
+                  const badgeText = s.status === 'generating' ? 'RUNNING' : s.status === 'awaiting_approval' ? 'APPROVAL' : 'IDLE';
+
+                  return (
+                    <TouchableOpacity
+                      key={s.id}
+                      style={[
+                        styles.sessionRow,
+                        {
+                          backgroundColor: isSelected ? theme.raised : 'transparent',
+                          borderColor: isSelected ? theme.accent : theme.border
+                        }
+                      ]}
+                      onPress={() => handleSwitchSession(s)}
+                    >
+                      <View style={styles.sessionRowLeft}>
+                        <Text style={[styles.sessionRowTitle, { color: theme.text }]} numberOfLines={1}>
+                          {s.title || 'Untitled'}
+                        </Text>
+                        <Text style={[styles.sessionRowMeta, { color: theme.muted }]}>
+                          {s.stepCount ? `${s.stepCount} steps` : ''}
+                        </Text>
+                      </View>
+                      <StatusBadge text={badgeText} tone={statusTone} />
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.modalNewBtn, { backgroundColor: theme.accent }]}
+              onPress={() => {
+                setSessionsModalVisible(false);
+                setNewSessionModalVisible(true);
+              }}
+            >
+              <Icon name="plus" size={16} color="#ffffff" />
+              <Text style={styles.modalNewBtnText}>Start New Conversation</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={newSessionModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNewSessionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>New Conversation</Text>
+              <TouchableOpacity onPress={() => setNewSessionModalVisible(false)}>
+                <Icon name="x" size={20} color={theme.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ marginBottom: 16 }}>
+              <Text style={[styles.inputLabel, { color: theme.muted }]}>INITIAL PROMPT (OPTIONAL)</Text>
+              <TextInput
+                style={[
+                  styles.modalInput,
+                  {
+                    backgroundColor: theme.raised,
+                    borderColor: theme.border,
+                    color: theme.text
+                  }
+                ]}
+                value={newSessionText}
+                onChangeText={setNewSessionText}
+                placeholder="What would you like the agent to work on?"
+                placeholderTextColor={theme.subtle}
+                multiline
+              />
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: theme.border }]}
+                onPress={() => setNewSessionModalVisible(false)}
+              >
+                <Text style={{ color: theme.muted, fontSize: 12, fontWeight: '600' }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalCreateBtn, { backgroundColor: theme.accent }]}
+                onPress={handleCreateSession}
+                disabled={creatingSession}
+              >
+                {creatingSession ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '600' }}>Create</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1651,5 +1885,138 @@ const styles = StyleSheet.create({
   starterText: {
     fontSize: 12,
     fontFamily: fontMedium
+  },
+  sessionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    borderWidth: 1
+  },
+  sessionSelector: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginRight: 10
+  },
+  sessionDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5
+  },
+  sessionTitleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flexShrink: 1
+  },
+  newSessionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  newSessionBtnText: {
+    fontSize: 11,
+    fontWeight: '600'
+  },
+  sessionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+    paddingHorizontal: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8
+  },
+  sessionRowLeft: {
+    flex: 1,
+    marginRight: 10
+  },
+  sessionRowTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2
+  },
+  sessionRowMeta: {
+    fontSize: 11
+  },
+  modalNewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 42,
+    borderRadius: 12,
+    marginTop: 12
+  },
+  modalNewBtnText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    padding: 20
+  },
+  modalContent: {
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 20
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  inputLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    marginBottom: 6
+  },
+  modalInput: {
+    height: 80,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    fontSize: 13,
+    textAlignVertical: 'top'
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10
+  },
+  modalCancelBtn: {
+    height: 40,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  modalCreateBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
   }
 });

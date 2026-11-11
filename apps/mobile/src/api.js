@@ -2,6 +2,7 @@ import {
   HealthResponseSchema,
   AgentStateSchema,
   ChatMessageSchema,
+  SessionSummarySchema,
   UploadResponseSchema
 } from '@ag-remote/shared';
 import { z } from 'zod';
@@ -52,8 +53,29 @@ export async function fetchState(profile) {
   return parsed.data;
 }
 
-export async function fetchMessages(profile, limit = 50) {
-  const res = await authenticatedRequest(profile, `/v1/messages?limit=${limit}`, 'GET');
+export async function fetchSessions(profile) {
+  const res = await authenticatedRequest(profile, '/v1/sessions', 'GET');
+  const schema = z.array(SessionSummarySchema);
+  const parsed = schema.safeParse(res);
+  if (!parsed.success) {
+    return [];
+  }
+  return parsed.data;
+}
+
+export async function createSession(profile, text) {
+  return authenticatedRequest(profile, '/v1/sessions', 'POST', { text });
+}
+
+export async function focusSession(profile, sessionId) {
+  return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/focus`, 'POST');
+}
+
+export async function fetchMessages(profile, limit = 50, sessionId) {
+  const path = sessionId
+    ? `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`
+    : `/v1/messages?limit=${limit}`;
+  const res = await authenticatedRequest(profile, path, 'GET');
   const schema = z.array(ChatMessageSchema);
   const parsed = schema.safeParse(res);
   if (!parsed.success) {
@@ -62,7 +84,10 @@ export async function fetchMessages(profile, limit = 50) {
   return parsed.data;
 }
 
-export async function sendPrompt(profile, text) {
+export async function sendPrompt(profile, text, sessionId) {
+  if (sessionId) {
+    return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/prompt`, 'POST', { text });
+  }
   return authenticatedRequest(profile, '/v1/prompt', 'POST', { text });
 }
 
@@ -74,8 +99,9 @@ export async function sendReject(profile, requestId) {
   return authenticatedRequest(profile, '/v1/reject', 'POST', { requestId });
 }
 
-export async function sendStop(profile) {
-  return authenticatedRequest(profile, '/v1/stop', 'POST');
+export async function sendStop(profile, sessionId) {
+  const path = sessionId ? `/v1/stop?sessionId=${encodeURIComponent(sessionId)}` : '/v1/stop';
+  return authenticatedRequest(profile, path, 'POST');
 }
 
 export async function fetchSettings(profile) {

@@ -24,7 +24,7 @@ import {
   getActiveProfile,
   setActiveProfileId
 } from '../../src/storage.js';
-import { probeAllProfiles, fetchState } from '../../src/api.js';
+import { probeAllProfiles, fetchState, fetchSessions, focusSession, createSession } from '../../src/api.js';
 
 export default function WorkspacesScreen() {
   const router = useRouter();
@@ -33,6 +33,8 @@ export default function WorkspacesScreen() {
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfileState] = useState(null);
   const [activeState, setActiveState] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [switchingSessionId, setSwitchingSessionId] = useState(null);
   const [probes, setProbes] = useState({});
   const [refreshing, setRefreshing] = useState(false);
 
@@ -43,6 +45,10 @@ export default function WorkspacesScreen() {
   const [token, setToken] = useState('');
   const [ntfyTopic, setNtfyTopic] = useState('');
 
+  const [newSessionModalVisible, setNewSessionModalVisible] = useState(false);
+  const [newSessionText, setNewSessionText] = useState('');
+  const [creatingSession, setCreatingSession] = useState(false);
+
   const loadData = useCallback(async () => {
     const list = await getProfiles();
     const active = await getActiveProfile();
@@ -51,11 +57,19 @@ export default function WorkspacesScreen() {
 
     if (active) {
       try {
-        const s = await fetchState(active);
+        const [s, sess] = await Promise.all([
+          fetchState(active).catch(() => null),
+          fetchSessions(active).catch(() => [])
+        ]);
         setActiveState(s);
+        setSessions(sess || []);
       } catch {
         setActiveState(null);
+        setSessions([]);
       }
+    } else {
+      setActiveState(null);
+      setSessions([]);
     }
 
     if (list.length > 0) {
@@ -125,6 +139,40 @@ export default function WorkspacesScreen() {
     }
     setModalVisible(false);
     await loadData();
+  };
+
+  const handleSelectSession = async (session) => {
+    if (!activeProfile) return;
+    setSwitchingSessionId(session.id);
+    try {
+      await focusSession(activeProfile, session.id);
+    } catch {}
+    setSwitchingSessionId(null);
+    router.push({
+      pathname: '/(tabs)/chat',
+      params: { sessionId: session.id, sessionTitle: session.title }
+    });
+  };
+
+  const handleCreateSession = async () => {
+    if (!activeProfile) return;
+    setCreatingSession(true);
+    try {
+      const res = await createSession(activeProfile, newSessionText.trim() || undefined);
+      setNewSessionModalVisible(false);
+      setNewSessionText('');
+      await loadData();
+      if (res?.sessionId) {
+        router.push({
+          pathname: '/(tabs)/chat',
+          params: { sessionId: res.sessionId, sessionTitle: newSessionText.trim() || 'New Conversation' }
+        });
+      }
+    } catch (err) {
+      Alert.alert('Error', err.message || 'Failed to create conversation');
+    } finally {
+      setCreatingSession(false);
+    }
   };
 
   const handleDelete = (profile) => {
@@ -223,43 +271,75 @@ export default function WorkspacesScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeading}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Open workspaces</Text>
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Conversations</Text>
             <TouchableOpacity
               style={styles.headingAction}
-              onPress={() => router.navigate('/(tabs)/chat')}
+              onPress={() => setNewSessionModalVisible(true)}
             >
-              <Text style={[styles.headingActionText, { color: theme.accent }]}>See all</Text>
-              <Icon name="arrow" size={16} color={theme.accent} />
+              <Icon name="plus" size={17} color={theme.accent} />
+              <Text style={[styles.headingActionText, { color: theme.accent }]}>New</Text>
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={[styles.workspaceCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
-            onPress={() => router.navigate('/(tabs)/chat')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.workspaceMark, { backgroundColor: theme.accent }]}>
-              <Text style={styles.workspaceMarkText}>
-                {(activeProfile?.name || 'A')[0].toUpperCase()}
+          {sessions.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.emptyText, { color: theme.muted }]}>
+                {activeProfile ? 'No conversations found on bridge.' : 'Select a bridge above to view conversations.'}
               </Text>
             </View>
-            <View style={styles.cardInfo}>
-              <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>
-                {activeProfile?.name || 'acme / dashboard'}
-              </Text>
-              <View style={styles.subStatusRow}>
-                <View style={[styles.greenDot, { backgroundColor: theme.success }]} />
-                <Text style={[styles.cardDetail, { color: theme.muted }]} numberOfLines={1}>
-                  {activeState?.status === 'generating'
-                    ? 'Agent working on task'
-                    : activeState?.status === 'awaiting_approval'
-                    ? 'Action required by agent'
-                    : 'Bridge connected and ready'}
-                </Text>
-              </View>
-            </View>
-            <Icon name="chevron" size={18} color={theme.muted} />
-          </TouchableOpacity>
+          ) : (
+            sessions.map((s) => {
+              const isCurrent = s.id === activeState?.activeSessionId;
+              const isSwitching = switchingSessionId === s.id;
+              const statusTone = s.status === 'generating' ? 'running' : s.status === 'awaiting_approval' ? 'warn' : 'muted';
+              const badgeText = s.status === 'generating' ? 'RUNNING' : s.status === 'awaiting_approval' ? 'APPROVAL' : 'IDLE';
+              const stepText = s.stepCount ? `${s.stepCount} steps` : '';
+              const timeText = s.lastActivityAt
+                ? new Date(s.lastActivityAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : '';
+              const metaText = [stepText, timeText].filter(Boolean).join(' · ');
+
+              return (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[
+                    styles.workspaceCard,
+                    {
+                      backgroundColor: theme.surface,
+                      borderColor: isCurrent ? theme.accent : theme.border
+                    }
+                  ]}
+                  onPress={() => handleSelectSession(s)}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.workspaceMark, { backgroundColor: isCurrent ? theme.accent : theme.raised }]}>
+                    <Text style={[styles.workspaceMarkText, { color: isCurrent ? '#ffffff' : theme.text }]}>
+                      {(s.title || 'C')[0].toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.cardInfo}>
+                    <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>
+                      {s.title || 'Untitled'}
+                    </Text>
+                    <View style={styles.subStatusRow}>
+                      {s.status === 'generating' ? (
+                        <View style={[styles.greenDot, { backgroundColor: theme.success }]} />
+                      ) : null}
+                      <Text style={[styles.cardDetail, { color: theme.muted }]} numberOfLines={1}>
+                        {metaText || (s.workspace ? s.workspace.split('/').pop() : 'Conversation')}
+                      </Text>
+                    </View>
+                  </View>
+                  {isSwitching ? (
+                    <ActivityIndicator size="small" color={theme.accent} />
+                  ) : (
+                    <StatusBadge text={badgeText} tone={statusTone} />
+                  )}
+                  <Icon name="chevron" size={18} color={theme.muted} />
+                </TouchableOpacity>
+              );
+            })
+          )}
         </View>
 
         <TouchableOpacity
@@ -374,6 +454,66 @@ export default function WorkspacesScreen() {
                 onPress={handleSave}
               >
                 <Text style={styles.saveButtonText}>Save Bridge</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={newSessionModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setNewSessionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: theme.text }]}>New Conversation</Text>
+              <TouchableOpacity onPress={() => setNewSessionModalVisible(false)}>
+                <Icon name="x" size={20} color={theme.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: theme.muted }]}>INITIAL PROMPT (OPTIONAL)</Text>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    height: 80,
+                    paddingTop: 10,
+                    textAlignVertical: 'top',
+                    backgroundColor: theme.raised,
+                    borderColor: theme.border,
+                    color: theme.text
+                  }
+                ]}
+                value={newSessionText}
+                onChangeText={setNewSessionText}
+                placeholder="What would you like the agent to work on?"
+                placeholderTextColor={theme.subtle}
+                multiline
+              />
+            </View>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.deleteButton, { borderColor: theme.border }]}
+                onPress={() => setNewSessionModalVisible(false)}
+              >
+                <Text style={[styles.deleteButtonText, { color: theme.muted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { backgroundColor: theme.accent }]}
+                onPress={handleCreateSession}
+                disabled={creatingSession}
+              >
+                {creatingSession ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>Create</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
