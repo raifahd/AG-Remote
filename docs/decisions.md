@@ -215,3 +215,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Updated `handleSend` in `chat.js` to upload all selected attachments before prompt dispatch, rolling back state if the upload fails to protect drafted messages.
   - Formatted prompt message with absolute file system paths on the host computer (`Saved to: <path>`), instructing the agent to directly inspect and view the uploaded image or document using `read_file`.
   - Added `.ag-remote/` to `.gitignore` to prevent tracking uploaded files.
+
+## 2026-11-11: Chat Feed Auto-Scroll, Bubble Themes, Tab Labels & Left-Aligned Input
+- **Complete Tab Labels:**
+  - Configured `TabBar.js` labels with `numberOfLines={1}`, `ellipsizeMode="clip"`, `adjustsFontSizeToFit`, and `minimumFontScale={0.75}`.
+  - Set `fontSize: 8.5`, `includeFontPadding: false` (to prevent Android native clipping), and increased tabbar horizontal padding, guaranteeing "Workspaces" and other tab names never wrap or truncate.
+- **Initial Auto-Scroll on Open:**
+  - Implemented multi-stage auto-scroll in `chat.js` triggered by `useFocusEffect`, `onContentSizeChange`, and `onLayout`.
+  - When the user navigates to the Chat tab, the screen immediately jumps to the bottom without manual scrolling.
+- **Monochrome User Bubble Inversion:**
+  - Configured high-contrast monochrome inversion:
+    - Dark mode: user bubble `#ffffff` with `#000000` text and badge elements.
+    - Light mode: user bubble `#000000` with `#ffffff` text and badge elements.
+- **Left-Aligned Input Placeholder:**
+  - Set `TextInput` to fixed `textAlign: 'left'` with `paddingLeft: 4` and `paddingRight: 6` so the "Message your agent" placeholder and typed text start naturally at the far left edge of the pill composer.

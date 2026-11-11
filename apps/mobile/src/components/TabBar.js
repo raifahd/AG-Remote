@@ -101,6 +101,10 @@ export default function TabBar(props) {
                   styles.tabLabel,
                   { color: isFocused ? activeColor : inactiveColor }
                 ]}
+                numberOfLines={1}
+                ellipsizeMode="clip"
+                adjustsFontSizeToFit
+                minimumFontScale={0.75}
               >
                 {tab.label}
               </Text>
@@ -128,17 +132,20 @@ const styles = StyleSheet.create({
     zIndex: 10
   },
   tabbar: {
-    width: '93%',
+    width: '94%',
     maxWidth: 452,
-    padding: 7,
+    paddingVertical: 5,
+    paddingHorizontal: 4,
     borderWidth: 1,
     borderRadius: 9999,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between'
   },
   tabButton: {
-    height: 52,
+    height: 50,
     flex: 1,
+    paddingHorizontal: 2,
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center'
@@ -147,10 +154,12 @@ const styles = StyleSheet.create({
     height: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 3
+    marginBottom: 2
   },
   tabLabel: {
-    fontSize: 9,
-    fontFamily: fontMedium
+    fontSize: 8.5,
+    fontFamily: fontMedium,
+    textAlign: 'center',
+    includeFontPadding: false
   }
 });

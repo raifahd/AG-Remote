@@ -344,19 +344,22 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
       ? attachmentLine.split('|')[0].replace(/\[Attachment:\s*|\s*\]/g, '').trim()
       : null;
 
+    const bubbleBg = theme.userBubble || (theme.mode === 'dark' ? '#ffffff' : '#000000');
+    const bubbleTextColor = theme.userText || (theme.mode === 'dark' ? '#000000' : '#ffffff');
+
     return (
       <View style={styles.userMessageRow}>
-        <View style={[styles.userBubble, { backgroundColor: theme.accent }]}>
+        <View style={[styles.userBubble, { backgroundColor: bubbleBg }]}>
           {badgeLabel && (
-            <View style={styles.userAttachmentBadge}>
-              <Icon name="attach" size={13} color="#ffffff" />
-              <Text style={styles.userAttachmentText} numberOfLines={2}>
+            <View style={[styles.userAttachmentBadge, { backgroundColor: theme.mode === 'dark' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)' }]}>
+              <Icon name="attach" size={13} color={bubbleTextColor} />
+              <Text style={[styles.userAttachmentText, { color: bubbleTextColor }]} numberOfLines={2}>
                 {badgeLabel}
               </Text>
             </View>
           )}
           {Boolean(bodyText) && (
-            <Text style={styles.userBubbleText}>{bodyText}</Text>
+            <Text style={[styles.userBubbleText, { color: bubbleTextColor }]}>{bodyText}</Text>
           )}
         </View>
       </View>
@@ -398,6 +401,7 @@ export default function ChatScreen() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   const flatListRef = useRef(null);
+  const initialScrolledRef = useRef(false);
   const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
@@ -477,7 +481,15 @@ export default function ChatScreen() {
           fetchMessages(active, 50).catch(() => []),
           fetchState(active).catch(() => null)
         ]);
-        if (list) setMessages(list);
+        if (list) {
+          setMessages(list);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }, 30);
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }, 120);
+        }
         if (st?.status) setAgentStatus(st.status);
       }
     } catch {}
@@ -485,7 +497,18 @@ export default function ChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadMessages();
+      initialScrolledRef.current = false;
+      loadMessages().then(() => {
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 30);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 150);
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: false });
+        }, 350);
+      });
     }, [loadMessages])
   );
 
@@ -618,6 +641,17 @@ export default function ChatScreen() {
           maxToRenderPerBatch={10}
           windowSize={11}
           removeClippedSubviews={Platform.OS === 'android'}
+          onContentSizeChange={() => {
+            if (!initialScrolledRef.current && messages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: false });
+              initialScrolledRef.current = true;
+            }
+          }}
+          onLayout={() => {
+            if (messages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
           contentContainerStyle={[
             styles.listContent,
             messages.length === 0 && styles.listContentEmpty
@@ -759,7 +793,7 @@ export default function ChatScreen() {
               styles.input,
               {
                 color: theme.text,
-                textAlign: inputText ? 'left' : 'center',
+                textAlign: 'left',
                 textAlignVertical: 'center'
               }
             ]}
@@ -1073,6 +1107,9 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     paddingVertical: Platform.OS === 'android' ? 6 : 8,
+    paddingLeft: 4,
+    paddingRight: 6,
+    textAlign: 'left',
     textAlignVertical: 'center',
     maxHeight: 76,
     fontFamily: fontRegular
