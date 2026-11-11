@@ -11,6 +11,7 @@ import {
   RejectRequestSchema,
   QuietHoursSettingsSchema,
   UploadPayloadSchema,
+  CreateSessionRequestSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -86,11 +87,76 @@ export class BridgeServer {
       }
     });
 
+    v1Router.get('/sessions', async (_req: Request, res: Response, next: NextFunction) => {
+      try {
+        const sessions = await this.adapter.listSessions();
+        res.json(sessions);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.post('/sessions', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const parsed = CreateSessionRequestSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+          return;
+        }
+        const sessionId = await this.adapter.createSession(parsed.data.text);
+        res.json({ ok: true, sessionId });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.post('/sessions/:id/focus', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const sessionId = req.params.id;
+        if (!sessionId) {
+          res.status(400).json(this.makeError('INVALID_BODY', 'Missing session ID'));
+          return;
+        }
+        await this.adapter.focusSession(sessionId);
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.post('/sessions/:id/prompt', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const sessionId = req.params.id;
+        const parsed = PromptRequestSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+          return;
+        }
+        await this.adapter.sendPrompt(parsed.data.text, sessionId);
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.get('/sessions/:id/messages', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const sessionId = req.params.id;
+        const limitParam = req.query.limit;
+        const limit = typeof limitParam === 'string' ? Math.max(1, Math.min(200, parseInt(limitParam, 10) || 50)) : 50;
+        const messages = await this.adapter.getMessages(limit, sessionId);
+        res.json(messages);
+      } catch (err) {
+        next(err);
+      }
+    });
+
     v1Router.get('/messages', async (req: Request, res: Response, next: NextFunction) => {
       try {
         const limitParam = req.query.limit;
         const limit = typeof limitParam === 'string' ? Math.max(1, Math.min(200, parseInt(limitParam, 10) || 50)) : 50;
-        const messages = await this.adapter.getMessages(limit);
+        const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+        const messages = await this.adapter.getMessages(limit, sessionId);
         res.json(messages);
       } catch (err) {
         next(err);
@@ -104,7 +170,8 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        await this.adapter.sendPrompt(parsed.data.text);
+        const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+        await this.adapter.sendPrompt(parsed.data.text, sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -177,17 +244,21 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        const state = await this.adapter.getState();
-        if (!state.pendingApproval) {
-          res.status(409).json(this.makeError('NO_PENDING_APPROVAL', 'No approval is currently pending'));
-          return;
+        try {
+          await this.adapter.approve(parsed.data.requestId);
+          res.json({ ok: true });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg === 'NO_PENDING_APPROVAL') {
+            res.status(409).json(this.makeError('NO_PENDING_APPROVAL', 'No approval is currently pending'));
+            return;
+          }
+          if (msg === 'STALE_REQUEST') {
+            res.status(409).json(this.makeError('STALE_REQUEST', 'Provided requestId does not match pending approval'));
+            return;
+          }
+          throw err;
         }
-        if (state.pendingApproval.requestId !== parsed.data.requestId) {
-          res.status(409).json(this.makeError('STALE_REQUEST', 'Provided requestId does not match pending approval'));
-          return;
-        }
-        await this.adapter.approve();
-        res.json({ ok: true });
       } catch (err) {
         next(err);
       }
@@ -200,25 +271,30 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        const state = await this.adapter.getState();
-        if (!state.pendingApproval) {
-          res.status(409).json(this.makeError('NO_PENDING_APPROVAL', 'No approval is currently pending'));
-          return;
+        try {
+          await this.adapter.reject(parsed.data.requestId);
+          res.json({ ok: true });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg === 'NO_PENDING_APPROVAL') {
+            res.status(409).json(this.makeError('NO_PENDING_APPROVAL', 'No approval is currently pending'));
+            return;
+          }
+          if (msg === 'STALE_REQUEST') {
+            res.status(409).json(this.makeError('STALE_REQUEST', 'Provided requestId does not match pending approval'));
+            return;
+          }
+          throw err;
         }
-        if (state.pendingApproval.requestId !== parsed.data.requestId) {
-          res.status(409).json(this.makeError('STALE_REQUEST', 'Provided requestId does not match pending approval'));
-          return;
-        }
-        await this.adapter.reject();
-        res.json({ ok: true });
       } catch (err) {
         next(err);
       }
     });
 
-    v1Router.post('/stop', async (_req: Request, res: Response, next: NextFunction) => {
+    v1Router.post('/stop', async (req: Request, res: Response, next: NextFunction) => {
       try {
-        await this.adapter.stop();
+        const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+        await this.adapter.stop(sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -345,9 +421,9 @@ export class BridgeServer {
       this.eventSubscription = this.adapter.onEvent((event) => {
         this.broadcastEvent(event);
         if (event.type === 'run_finished') {
-          void this.notifier?.notifyRunFinished(event.sessionId);
+          void this.notifier?.notifyRunFinished(event.sessionId, event.sessionTitle);
         } else if (event.type === 'approval_requested') {
-          void this.notifier?.notifyApprovalRequested(event.kind, event.summary);
+          void this.notifier?.notifyApprovalRequested(event.kind, event.summary, event.sessionId, event.sessionTitle);
         }
       });
 

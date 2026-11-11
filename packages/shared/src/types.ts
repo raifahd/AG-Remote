@@ -16,8 +16,12 @@ import {
   ApprovalRequestedEventSchema,
   RunFinishedEventSchema,
   MessageAppendedEventSchema,
+  SessionCreatedEventSchema,
+  ActiveSessionChangedEventSchema,
   BridgeErrorEventSchema,
-  AgentEventSchema
+  AgentEventSchema,
+  CreateSessionRequestSchema,
+  FocusSessionRequestSchema
 } from './schemas.js';
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -32,11 +36,15 @@ export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 export type ApproveRequest = z.infer<typeof ApproveRequestSchema>;
 export type RejectRequest = z.infer<typeof RejectRequestSchema>;
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+export type CreateSessionRequest = z.infer<typeof CreateSessionRequestSchema>;
+export type FocusSessionRequest = z.infer<typeof FocusSessionRequestSchema>;
 
 export type StatusChangedEvent = z.infer<typeof StatusChangedEventSchema>;
 export type ApprovalRequestedEvent = z.infer<typeof ApprovalRequestedEventSchema>;
 export type RunFinishedEvent = z.infer<typeof RunFinishedEventSchema>;
 export type MessageAppendedEvent = z.infer<typeof MessageAppendedEventSchema>;
+export type SessionCreatedEvent = z.infer<typeof SessionCreatedEventSchema>;
+export type ActiveSessionChangedEvent = z.infer<typeof ActiveSessionChangedEventSchema>;
 export type BridgeErrorEvent = z.infer<typeof BridgeErrorEventSchema>;
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
 

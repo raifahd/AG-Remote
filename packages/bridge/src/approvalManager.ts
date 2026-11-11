@@ -4,10 +4,11 @@ import { PendingApproval, ApprovalKind } from '@ag-remote/shared';
 export class ApprovalManager {
   private currentApproval: PendingApproval | null = null;
 
-  createApproval(kind: ApprovalKind, summary: string): PendingApproval {
+  createApproval(kind: ApprovalKind, summary: string, sessionId?: string): PendingApproval {
     const requestId = `req_${crypto.randomBytes(8).toString('hex')}`;
     const approval: PendingApproval = {
       requestId,
+      sessionId,
       kind,
       summary,
       createdAt: Date.now()

@@ -6,6 +6,7 @@ import { AgentStateMachine } from '../src/stateMachine.js';
 describe('SdkAdapter', () => {
   let mockLsServer: http.Server;
   let receivedRpc: Array<{ method: string; payload: any }> = [];
+  let trajectoryStatus = 'CASCADE_RUN_STATUS_RUNNING';
   const mockLsPort = 49153;
   let adapter: SdkAdapter;
   let stateMachine: AgentStateMachine;
@@ -20,6 +21,10 @@ describe('SdkAdapter', () => {
         const payload = body ? JSON.parse(body) : {};
         receivedRpc.push({ method, payload });
 
+        if (method === 'CancelCascadeInvocation') {
+          trajectoryStatus = 'CASCADE_RUN_STATUS_IDLE';
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         if (method === 'GetAllCascadeTrajectories') {
           res.end(
@@ -28,7 +33,7 @@ describe('SdkAdapter', () => {
                 'traj-1': {
                   summary: 'Trajectory One',
                   stepCount: 15,
-                  status: 'CASCADE_RUN_STATUS_RUNNING',
+                  status: trajectoryStatus,
                   lastModifiedTime: new Date().toISOString()
                 }
               }

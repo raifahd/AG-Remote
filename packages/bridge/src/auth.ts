@@ -9,6 +9,22 @@ export interface SecretStore {
   delete(key: string): Promise<void>;
 }
 
+export class InMemorySecretStore implements SecretStore {
+  private readonly data = new Map<string, string>();
+
+  async get(key: string): Promise<string | undefined> {
+    return this.data.get(key);
+  }
+
+  async store(key: string, value: string): Promise<void> {
+    this.data.set(key, value);
+  }
+
+  async delete(key: string): Promise<void> {
+    this.data.delete(key);
+  }
+}
+
 export class FileSecretStore implements SecretStore {
   private readonly filePath: string;
 

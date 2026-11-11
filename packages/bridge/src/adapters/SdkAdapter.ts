@@ -5,7 +5,9 @@ import {
   AgentState,
   ChatMessage,
   AgentEvent,
-  SessionSummary
+  SessionSummary,
+  RunStatus,
+  PendingApproval
 } from '@ag-remote/shared';
 import { AgentAdapter, Disposable } from './AgentAdapter.js';
 import { AgentStateMachine } from '../stateMachine.js';
@@ -25,6 +27,9 @@ interface RawTrajectorySummary {
   trajectoryId?: string;
   status?: string;
   createdTime?: string;
+  workspaces?: Array<{
+    workspaceFolderAbsoluteUri?: string;
+  }>;
 }
 
 interface GetAllTrajectoriesResponse {
@@ -53,6 +58,10 @@ interface GetCascadeTrajectoryResponse {
     cascadeId?: string;
     steps?: RawStep[];
   };
+}
+
+interface StartCascadeResponse {
+  cascadeId?: string;
 }
 
 function detectAgyHub(): { port: number; token: string } | null {
@@ -86,6 +95,7 @@ export class SdkAdapter implements AgentAdapter {
   private pollTimer: NodeJS.Timeout | null = null;
   private activeSessionId: string | null = null;
   private lastStepCounts = new Map<string, number>();
+  private readonly stoppedSessions = new Set<string>();
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -106,6 +116,39 @@ export class SdkAdapter implements AgentAdapter {
     this.lsPort = port;
     this.csrfToken = csrfToken;
     this.useTls = useTls;
+  }
+
+  async checkCapabilities(): Promise<{ ok: boolean; missing: string[] }> {
+    const requiredMethods = [
+      'GetAllCascadeTrajectories',
+      'GetCascadeTrajectory',
+      'StartCascade',
+      'SendUserCascadeMessage',
+      'CancelCascadeInvocation'
+    ];
+    const missing: string[] = [];
+
+    for (const method of requiredMethods) {
+      try {
+        if (method === 'GetAllCascadeTrajectories') {
+          await this.callRpc(method, {});
+        } else if (method === 'GetCascadeTrajectory') {
+          await this.callRpc(method, { cascadeId: 'capability_check_probe' }).catch((err) => {
+            if (String(err).includes('404')) missing.push(method);
+          });
+        }
+      } catch (err) {
+        const msg = String(err);
+        if (msg.includes('404') || msg.includes('not found')) {
+          missing.push(method);
+        }
+      }
+    }
+
+    return {
+      ok: missing.length === 0,
+      missing
+    };
   }
 
   startPolling(): void {
@@ -153,66 +196,134 @@ export class SdkAdapter implements AgentAdapter {
         }
       }
 
-      if (!activeId) {
-        return;
-      }
+      for (const id of sessionIds) {
+        const item = summaries[id];
+        if (!item) continue;
 
-      const current = summaries[activeId];
-      if (!current) {
-        return;
-      }
+        const title = item.summary ?? 'Untitled';
+        this.stateMachine.setSessionTitle(id, title);
 
-      const isRunning = current.status === 'CASCADE_RUN_STATUS_RUNNING';
-      const prevStepCount = this.lastStepCounts.get(activeId) ?? 0;
-      const currentStepCount = current.stepCount ?? 0;
-      this.lastStepCounts.set(activeId, currentStepCount);
+        const isRunning = item.status === 'CASCADE_RUN_STATUS_RUNNING';
+        const currentStepCount = item.stepCount ?? 0;
+        this.lastStepCounts.set(id, currentStepCount);
 
-      if (isRunning) {
-        this.stateMachine.onGenerating(activeId);
-      } else {
-        if (currentStepCount > prevStepCount && this.stateMachine.getStatus() === 'idle') {
-          this.stateMachine.onGenerating(activeId);
+        if (isRunning) {
+          if (this.stoppedSessions.has(id)) {
+            continue;
+          }
+          this.stateMachine.onGenerating(id, title);
+        } else {
+          this.stoppedSessions.delete(id);
+          this.stateMachine.onIdle(id, title);
         }
-        this.stateMachine.onIdle(activeId);
       }
-    } catch {
-    }
+
+      if (activeId) {
+        try {
+          const trajResp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId: activeId });
+          const steps = trajResp?.trajectory?.steps ?? [];
+          if (steps.length > 0) {
+            const lastStep = steps[steps.length - 1];
+            if (lastStep?.status === 'CORTEX_STEP_STATUS_WAITING') {
+              const stepType = lastStep.type ?? '';
+              let kind: 'edit' | 'terminal' | 'tool' = 'tool';
+              if (stepType.includes('CODE_ACTION') || stepType.includes('EDIT_FILE')) {
+                kind = 'edit';
+              } else if (stepType.includes('COMMAND') || stepType.includes('TERMINAL')) {
+                kind = 'terminal';
+              }
+              const currentPending = this.stateMachine.getPendingApproval(activeId);
+              if (!currentPending) {
+                const approval: PendingApproval = {
+                  requestId: `req_${lastStep.metadata?.executionId ?? Date.now()}`,
+                  sessionId: activeId,
+                  kind,
+                  summary: `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`,
+                  createdAt: Date.now()
+                };
+                this.stateMachine.onAwaitingApproval(approval, activeId);
+              }
+            }
+          }
+        } catch {}
+      }
+    } catch {}
   }
 
   async getState(): Promise<AgentState> {
+    const sessions = await this.listSessions();
+    const activeId = this.activeSessionId;
+
+    return {
+      sessions,
+      activeSessionId: activeId,
+      status: this.stateMachine.getStatus(activeId ?? undefined),
+      pendingApproval: this.stateMachine.getPendingApproval(activeId ?? undefined)
+    };
+  }
+
+  async listSessions(): Promise<SessionSummary[]> {
     const sessions: SessionSummary[] = [];
-    let activeId = this.activeSessionId;
 
     try {
       const resp = await this.callRpc<GetAllTrajectoriesResponse>('GetAllCascadeTrajectories', {});
       const summaries = resp?.trajectorySummaries ?? {};
       for (const id of Object.keys(summaries)) {
         const item = summaries[id];
+        const title = item?.summary ?? 'Untitled';
+        const lastActivityAt = item?.lastModifiedTime ? new Date(item.lastModifiedTime).getTime() : undefined;
+        const status: RunStatus = item?.status === 'CASCADE_RUN_STATUS_RUNNING' ? 'generating' : 'idle';
+        const workspace = item?.workspaces?.[0]?.workspaceFolderAbsoluteUri;
+
         sessions.push({
           id,
-          title: item?.summary ?? 'Untitled',
-          lastModified: item?.lastModifiedTime ? new Date(item.lastModifiedTime).getTime() : undefined
+          title,
+          stepCount: item?.stepCount,
+          lastActivityAt,
+          status,
+          workspace,
+          lastModified: lastActivityAt
         });
       }
     } catch {
-      if (activeId) {
+      if (this.activeSessionId) {
         sessions.push({
-          id: activeId,
+          id: this.activeSessionId,
           title: 'Active Session'
         });
       }
     }
 
-    return {
-      sessions,
-      activeSessionId: activeId,
-      status: this.stateMachine.getStatus(),
-      pendingApproval: this.stateMachine.getPendingApproval()
-    };
+    return sessions;
   }
 
-  async getMessages(limit: number): Promise<ChatMessage[]> {
-    const cascadeId = this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
+  async focusSession(id: string): Promise<void> {
+    if (this.executeCommand) {
+      await this.executeCommand('antigravity.setVisibleConversation', id);
+    }
+    this.activeSessionId = id;
+    this.stateMachine.setSessionId(id);
+  }
+
+  async createSession(text?: string): Promise<string> {
+    const resp = await this.callRpc<StartCascadeResponse>('StartCascade', { source: 1 });
+    const cascadeId = resp?.cascadeId;
+    if (!cascadeId) {
+      throw new Error('StartCascade returned no cascadeId');
+    }
+
+    const title = text ? (text.length > 30 ? `${text.slice(0, 30)}...` : text) : 'New Session';
+    this.stateMachine.onSessionCreated(cascadeId, title);
+
+    if (text) {
+      await this.sendPrompt(text, cascadeId);
+    }
+
+    return cascadeId;
+  }
+
+  async getMessages(limit: number, sessionId?: string): Promise<ChatMessage[]> {
+    const cascadeId = sessionId ?? this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
     if (!cascadeId) {
       return [];
     }
@@ -251,11 +362,11 @@ export class SdkAdapter implements AgentAdapter {
     }
   }
 
-  async sendPrompt(text: string): Promise<void> {
-    if (!this.activeSessionId) {
+  async sendPrompt(text: string, sessionId?: string): Promise<void> {
+    if (!this.activeSessionId && !sessionId) {
       await this.pollOnce();
     }
-    const cascadeId = this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
+    const cascadeId = sessionId ?? this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
     if (!cascadeId) {
       if (this.executeCommand) {
         await this.executeCommand('antigravity.sendTextToChat', text);
@@ -270,72 +381,165 @@ export class SdkAdapter implements AgentAdapter {
       items: [{ text }]
     };
 
+    this.stoppedSessions.delete(cascadeId);
     await this.callRpc('SendUserCascadeMessage', payload);
     this.stateMachine.onGenerating(cascadeId);
-    this.pollOnce().catch(() => {});
+    this.stateMachine.onMessageAppended(cascadeId, 'user', text);
   }
 
-  async approve(): Promise<void> {
-    const kind = this.stateMachine.getPendingApproval()?.kind;
-    if (this.executeCommand) {
-      if (kind === 'terminal') {
-        try {
-          await this.executeCommand('antigravity.terminalCommand.accept');
-        } catch {
-          await this.executeCommand('antigravity.command.accept');
-        }
-      } else if (kind === 'edit') {
-        try {
-          await this.executeCommand('antigravity.agent.acceptAgentStep');
-        } catch {
-          await this.executeCommand('antigravity.command.accept');
-        }
-      } else {
-        try {
-          await this.executeCommand('antigravity.command.accept');
-        } catch {
-          await this.executeCommand('antigravity.agent.acceptAgentStep');
+  async approve(requestId?: string): Promise<void> {
+    const activePending = this.stateMachine.getPendingApproval();
+    if (activePending) {
+      if (requestId && activePending.requestId !== requestId) {
+        throw new Error('STALE_REQUEST');
+      }
+      const kind = activePending.kind;
+      if (this.executeCommand) {
+        if (kind === 'terminal') {
+          try {
+            await this.executeCommand('antigravity.terminalCommand.accept');
+          } catch {
+            await this.executeCommand('antigravity.command.accept');
+          }
+        } else if (kind === 'edit') {
+          try {
+            await this.executeCommand('antigravity.agent.acceptAgentStep');
+          } catch {
+            await this.executeCommand('antigravity.command.accept');
+          }
+        } else {
+          try {
+            await this.executeCommand('antigravity.command.accept');
+          } catch {
+            await this.executeCommand('antigravity.agent.acceptAgentStep');
+          }
         }
       }
+      this.stateMachine.onGenerating(this.activeSessionId ?? undefined);
+      return;
     }
-    this.stateMachine.onGenerating();
-  }
 
-  async reject(): Promise<void> {
-    const kind = this.stateMachine.getPendingApproval()?.kind;
-    if (this.executeCommand) {
-      if (kind === 'terminal') {
-        try {
-          await this.executeCommand('antigravity.terminalCommand.reject');
-        } catch {
-          await this.executeCommand('antigravity.command.reject');
+    if (requestId) {
+      const bgPending = this.stateMachine.findApprovalByRequestId(requestId);
+      if (bgPending && bgPending.sessionId) {
+        const targetSessionId = bgPending.sessionId;
+        await this.focusSession(targetSessionId);
+        await new Promise((r) => setTimeout(r, 150));
+        const rechecked = this.stateMachine.getPendingApproval(targetSessionId);
+        if (!rechecked || rechecked.requestId !== requestId) {
+          throw new Error('STALE_REQUEST');
         }
-      } else if (kind === 'edit') {
-        try {
-          await this.executeCommand('antigravity.agent.rejectAgentStep');
-        } catch {
-          await this.executeCommand('antigravity.command.reject');
+        const kind = rechecked.kind;
+        if (this.executeCommand) {
+          if (kind === 'terminal') {
+            try {
+              await this.executeCommand('antigravity.terminalCommand.accept');
+            } catch {
+              await this.executeCommand('antigravity.command.accept');
+            }
+          } else if (kind === 'edit') {
+            try {
+              await this.executeCommand('antigravity.agent.acceptAgentStep');
+            } catch {
+              await this.executeCommand('antigravity.command.accept');
+            }
+          } else {
+            try {
+              await this.executeCommand('antigravity.command.accept');
+            } catch {
+              await this.executeCommand('antigravity.agent.acceptAgentStep');
+            }
+          }
         }
-      } else {
-        try {
-          await this.executeCommand('antigravity.command.reject');
-        } catch {
-          await this.executeCommand('antigravity.agent.rejectAgentStep');
-        }
+        this.stateMachine.onGenerating(targetSessionId);
+        return;
       }
     }
-    this.stateMachine.onIdle();
+
+    throw new Error('NO_PENDING_APPROVAL');
   }
 
-  async stop(): Promise<void> {
-    const cascadeId = this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
+  async reject(requestId?: string): Promise<void> {
+    const activePending = this.stateMachine.getPendingApproval();
+    if (activePending) {
+      if (requestId && activePending.requestId !== requestId) {
+        throw new Error('STALE_REQUEST');
+      }
+      const kind = activePending.kind;
+      if (this.executeCommand) {
+        if (kind === 'terminal') {
+          try {
+            await this.executeCommand('antigravity.terminalCommand.reject');
+          } catch {
+            await this.executeCommand('antigravity.command.reject');
+          }
+        } else if (kind === 'edit') {
+          try {
+            await this.executeCommand('antigravity.agent.rejectAgentStep');
+          } catch {
+            await this.executeCommand('antigravity.command.reject');
+          }
+        } else {
+          try {
+            await this.executeCommand('antigravity.command.reject');
+          } catch {
+            await this.executeCommand('antigravity.agent.rejectAgentStep');
+          }
+        }
+      }
+      this.stateMachine.onIdle(this.activeSessionId ?? undefined);
+      return;
+    }
+
+    if (requestId) {
+      const bgPending = this.stateMachine.findApprovalByRequestId(requestId);
+      if (bgPending && bgPending.sessionId) {
+        const targetSessionId = bgPending.sessionId;
+        await this.focusSession(targetSessionId);
+        await new Promise((r) => setTimeout(r, 150));
+        const rechecked = this.stateMachine.getPendingApproval(targetSessionId);
+        if (!rechecked || rechecked.requestId !== requestId) {
+          throw new Error('STALE_REQUEST');
+        }
+        const kind = rechecked.kind;
+        if (this.executeCommand) {
+          if (kind === 'terminal') {
+            try {
+              await this.executeCommand('antigravity.terminalCommand.reject');
+            } catch {
+              await this.executeCommand('antigravity.command.reject');
+            }
+          } else if (kind === 'edit') {
+            try {
+              await this.executeCommand('antigravity.agent.rejectAgentStep');
+            } catch {
+              await this.executeCommand('antigravity.command.reject');
+            }
+          } else {
+            try {
+              await this.executeCommand('antigravity.command.reject');
+            } catch {
+              await this.executeCommand('antigravity.agent.rejectAgentStep');
+            }
+          }
+        }
+        this.stateMachine.onIdle(targetSessionId);
+        return;
+      }
+    }
+
+    throw new Error('NO_PENDING_APPROVAL');
+  }
+
+  async stop(sessionId?: string): Promise<void> {
+    const cascadeId = sessionId ?? this.activeSessionId ?? process.env.ANTIGRAVITY_CONVERSATION_ID ?? '';
     if (cascadeId) {
+      this.stoppedSessions.add(cascadeId);
       try {
         await this.callRpc('CancelCascadeInvocation', { cascadeId });
-      } catch {
-      }
+      } catch {}
     }
-    this.stateMachine.onStopped(cascadeId);
+    this.stateMachine.onStopped(cascadeId || undefined);
   }
 
   onEvent(handler: (e: AgentEvent) => void): Disposable {

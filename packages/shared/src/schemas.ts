@@ -30,6 +30,7 @@ export const ApprovalKindSchema = z.enum([
 
 export const PendingApprovalSchema = z.object({
   requestId: z.string().min(1),
+  sessionId: z.string().optional(),
   kind: ApprovalKindSchema,
   summary: z.string(),
   createdAt: z.number().int().nonnegative()
@@ -38,6 +39,10 @@ export const PendingApprovalSchema = z.object({
 export const SessionSummarySchema = z.object({
   id: z.string().min(1),
   title: z.string(),
+  stepCount: z.number().int().nonnegative().optional(),
+  lastActivityAt: z.number().int().nonnegative().optional(),
+  status: RunStatusSchema.optional(),
+  workspace: z.string().optional(),
   lastModified: z.number().int().nonnegative().optional()
 }).strict();
 
@@ -95,6 +100,8 @@ export const StatusChangedEventSchema = z.object({
 export const ApprovalRequestedEventSchema = z.object({
   type: z.literal('approval_requested'),
   requestId: z.string(),
+  sessionId: z.string().optional(),
+  sessionTitle: z.string().optional(),
   kind: ApprovalKindSchema,
   summary: z.string(),
   at: z.number().int().nonnegative()
@@ -103,14 +110,31 @@ export const ApprovalRequestedEventSchema = z.object({
 export const RunFinishedEventSchema = z.object({
   type: z.literal('run_finished'),
   sessionId: z.string(),
+  sessionTitle: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
 export const MessageAppendedEventSchema = z.object({
   type: z.literal('message_appended'),
   sessionId: z.string(),
+  sessionTitle: z.string().optional(),
   role: z.enum(['user', 'agent']),
   text: z.string(),
+  at: z.number().int().nonnegative()
+}).strict();
+
+export const SessionCreatedEventSchema = z.object({
+  type: z.literal('session_created'),
+  sessionId: z.string(),
+  title: z.string(),
+  at: z.number().int().nonnegative()
+}).strict();
+
+export const ActiveSessionChangedEventSchema = z.object({
+  type: z.literal('active_session_changed'),
+  sessionId: z.string(),
+  previousSessionId: z.string().optional(),
+  title: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -125,8 +149,18 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   ApprovalRequestedEventSchema,
   RunFinishedEventSchema,
   MessageAppendedEventSchema,
+  SessionCreatedEventSchema,
+  ActiveSessionChangedEventSchema,
   BridgeErrorEventSchema
 ]);
+
+export const CreateSessionRequestSchema = z.object({
+  text: z.string().optional()
+}).strict();
+
+export const FocusSessionRequestSchema = z.object({
+  sessionId: z.string().optional()
+}).strict();
 
 export const PairingPayloadSchema = z.object({
   baseUrl: z.string().url(),

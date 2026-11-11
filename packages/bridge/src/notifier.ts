@@ -145,23 +145,27 @@ export class NtfyNotifier {
     });
   }
 
-  async notifyRunFinished(sessionId: string): Promise<boolean> {
+  async notifyRunFinished(sessionId: string, sessionTitle?: string): Promise<boolean> {
     if (this.isQuietHours()) {
       return false;
     }
     const shortId = sessionId.length > 12 ? sessionId.slice(0, 12) : sessionId;
+    const desc = sessionTitle ? `${sessionTitle} (${shortId})` : `session ${shortId}`;
     return this.sendNotification({
       title: `[${this.hostLabel}] Run Finished`,
-      message: `Agent finished execution for session ${shortId}`,
+      message: `Agent finished execution for ${desc}`,
       priority: 3,
       tags: ['white_check_mark']
     });
   }
 
-  async notifyApprovalRequested(kind: string, summary: string): Promise<boolean> {
+  async notifyApprovalRequested(kind: string, summary: string, _sessionId?: string, sessionTitle?: string): Promise<boolean> {
     const safeSummary = summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
+    const titlePrefix = sessionTitle
+      ? `[${this.hostLabel}] Approval: ${sessionTitle}`
+      : `[${this.hostLabel}] Approval Required (${kind})`;
     return this.sendNotification({
-      title: `[${this.hostLabel}] Approval Required (${kind})`,
+      title: titlePrefix,
       message: safeSummary,
       priority: 4,
       tags: ['warning', 'bell']

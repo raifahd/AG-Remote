@@ -261,3 +261,31 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **Simultaneous Stop and Follow-up Prompt Controls:**
   - When the agent is generating (`isWorking === true`), the composer now displays both the Stop button (red square) and the Send button side-by-side.
   - The Send button is enabled as soon as the user enters text or adds an attachment (`canSend`), allowing queued follow-up prompts into the active cascade without interrupting the ongoing run.
+
+## 2026-11-11: Phase 4b Conversation Browsing, Switching & Background Approvals
+- **Compliance & Credential Safety (R-18):**
+  - Confirmed via `antigravity-sdk` `LEGAL.md` and terms review that the bridge operates strictly as a local IDE extension / tool integration.
+  - No Google OAuth tokens, cookies, accounts, refresh tokens, or persistent cloud credentials are read, stored, transmitted, or touched anywhere.
+  - All RPC communication connects exclusively to `127.0.0.1` on the local language server hub port using the ephemeral Language Server CSRF token (`--csrf_token` via `x-codeium-csrf-token`).
+- **Workspace Scoping & Port Allocation (FR-34, Section 4.4):**
+  - `GetAllCascadeTrajectories` ConnectRPC is scoped strictly to the workspace folder of the active language server process instance.
+  - In multi-window environments, each IDE window spawns an independent language server process with its own hub port (e.g. PID 48498 port 36307 for `AG Remote`, PID 12184 port 34619 for `ShoeSite`).
+  - Cross-workspace listing across multiple windows is deferred to the Phase 6 hub. The bridge currently connects to the workspace window in which it was launched.
+- **REST Endpoints & Backward Compatibility Deviation (R-25):**
+  - Implemented SRS endpoints:
+    - `GET /v1/sessions`: lists all conversations with `id`, `title`, `stepCount`, `lastActivityAt`, `status`, and `workspace`.
+    - `POST /v1/sessions`: creates a new conversation with optional initial text (`{ text?: string }`) using `StartCascade` with source 1 (`CORTEX_TRAJECTORY_SOURCE_USER`).
+    - `POST /v1/sessions/:id/focus`: focuses the specified conversation in the IDE UI.
+    - `POST /v1/sessions/:id/prompt`: dispatches a prompt to a specific active or background conversation without disrupting other windows.
+    - `GET /v1/sessions/:id/messages?limit=N`: retrieves structured chat messages for any active or background conversation.
+  - Kept legacy `POST /v1/prompt` and `GET /v1/messages` targeting the active conversation for backward compatibility with existing clients and mobile versions.
+- **Background Approval Detection & Race Protection:**
+  - `GetCascadeTrajectory` steps expose pending user interaction through `status === 'CORTEX_STEP_STATUS_WAITING'`.
+  - Step classification derives approval kinds: `CODE_ACTION` or `EDIT_FILE` maps to `edit`, `COMMAND` or `TERMINAL` maps to `terminal`, and others map to `tool`.
+  - VS Code approval commands (`antigravity.terminalCommand.accept`, `antigravity.agent.acceptAgentStep`, `antigravity.command.accept`) take no parameters and execute only on the currently active step in the editor UI.
+  - For non-active sessions, the bridge first focuses the conversation (`antigravity.setVisibleConversation`), waits 150ms for the UI to activate, re-checks that the identical `requestId` is still pending, and only then executes the approval command. If the approval disappeared or changed during focus, it rejects with `STALE_REQUEST`.
+- **State Machine Multi-Session Architecture (FR-35):**
+  - Refactored `AgentStateMachine` from global status tracking to per-conversation status tracking (`sessionStatuses` and `sessionTitles` maps) while preserving the 2000ms debounce on `generating` -> `idle` transitions per conversation.
+  - Added events `session_created` and `active_session_changed`. Enriched `run_finished`, `approval_requested`, and `message_appended` with `sessionId` and `sessionTitle`.
+  - Push notifications now include the conversation title in the notification title and body.
+

@@ -5,6 +5,9 @@ import {
   StatusChangedEvent,
   ApprovalRequestedEvent,
   RunFinishedEvent,
+  MessageAppendedEvent,
+  SessionCreatedEvent,
+  ActiveSessionChangedEvent,
   BridgeErrorEvent
 } from '@ag-remote/shared';
 
@@ -13,10 +16,11 @@ export interface StateMachineOptions {
 }
 
 export class AgentStateMachine {
-  private currentStatus: RunStatus = 'idle';
-  private currentSessionId: string | null = null;
-  private currentApproval: PendingApproval | null = null;
-  private debounceTimer: NodeJS.Timeout | null = null;
+  private activeSessionId: string | null = null;
+  private readonly sessionStatuses = new Map<string, RunStatus>();
+  private readonly sessionTitles = new Map<string, string>();
+  private readonly sessionApprovals = new Map<string, PendingApproval>();
+  private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
   private readonly debounceMs: number;
   private readonly listeners = new Set<(e: AgentEvent) => void>();
 
@@ -24,51 +28,96 @@ export class AgentStateMachine {
     this.debounceMs = options.debounceMs ?? 2000;
   }
 
-  getStatus(): RunStatus {
-    return this.currentStatus;
+  getStatus(sessionId?: string): RunStatus {
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
+    return this.sessionStatuses.get(sid) ?? 'idle';
   }
 
   getSessionId(): string | null {
-    return this.currentSessionId;
+    return this.activeSessionId;
   }
 
-  getPendingApproval(): PendingApproval | null {
-    return this.currentApproval;
+  getSessionTitle(sessionId: string): string | undefined {
+    return this.sessionTitles.get(sessionId);
+  }
+
+  setSessionTitle(sessionId: string, title: string): void {
+    this.sessionTitles.set(sessionId, title);
+  }
+
+  getPendingApproval(sessionId?: string): PendingApproval | null {
+    if (sessionId) {
+      return this.sessionApprovals.get(sessionId) ?? null;
+    }
+    if (this.activeSessionId) {
+      return this.sessionApprovals.get(this.activeSessionId) ?? null;
+    }
+    return null;
+  }
+
+  findApprovalByRequestId(requestId: string): PendingApproval | null {
+    for (const app of this.sessionApprovals.values()) {
+      if (app.requestId === requestId) {
+        return app;
+      }
+    }
+    return null;
   }
 
   setSessionId(sessionId: string): void {
-    this.currentSessionId = sessionId;
-  }
-
-  onGenerating(sessionId?: string): void {
-    if (sessionId) {
-      this.currentSessionId = sessionId;
-    }
-    this.cancelDebounce();
-
-    if (this.currentStatus === 'awaiting_approval') {
-      this.currentApproval = null;
-    }
-
-    if (this.currentStatus !== 'generating') {
-      this.currentStatus = 'generating';
-      this.emitStatusChanged('generating');
+    const previous = this.activeSessionId;
+    if (previous !== sessionId) {
+      this.activeSessionId = sessionId;
+      const title = this.sessionTitles.get(sessionId);
+      const event: ActiveSessionChangedEvent = {
+        type: 'active_session_changed',
+        sessionId,
+        previousSessionId: previous ?? undefined,
+        title,
+        at: Date.now()
+      };
+      this.emit(event);
     }
   }
 
-  onAwaitingApproval(approval: PendingApproval, sessionId?: string): void {
+  onGenerating(sessionId?: string, title?: string): void {
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
     if (sessionId) {
-      this.currentSessionId = sessionId;
+      this.activeSessionId = sessionId;
     }
-    this.cancelDebounce();
+    if (title) {
+      this.sessionTitles.set(sid, title);
+    }
+    this.cancelDebounce(sid);
+    this.sessionApprovals.delete(sid);
 
-    this.currentApproval = approval;
-    this.currentStatus = 'awaiting_approval';
-    this.emitStatusChanged('awaiting_approval');
+    const prevStatus = this.sessionStatuses.get(sid);
+    if (prevStatus !== 'generating') {
+      this.sessionStatuses.set(sid, 'generating');
+      this.emitStatusChanged(sid, 'generating');
+    }
+  }
 
+  onAwaitingApproval(approval: PendingApproval, sessionId?: string, title?: string): void {
+    const sid = sessionId ?? approval.sessionId ?? this.activeSessionId ?? 'default-session';
+    if (sessionId) {
+      this.activeSessionId = sessionId;
+    }
+    if (title) {
+      this.sessionTitles.set(sid, title);
+    }
+    this.cancelDebounce(sid);
+
+    this.sessionApprovals.set(sid, approval);
+    this.sessionStatuses.set(sid, 'awaiting_approval');
+    this.emitStatusChanged(sid, 'awaiting_approval');
+
+    const resolvedTitle = title ?? this.sessionTitles.get(sid);
     const event: ApprovalRequestedEvent = {
       type: 'approval_requested',
       requestId: approval.requestId,
+      sessionId: approval.sessionId ?? sid,
+      sessionTitle: resolvedTitle,
       kind: approval.kind,
       summary: approval.summary,
       at: Date.now()
@@ -76,57 +125,83 @@ export class AgentStateMachine {
     this.emit(event);
   }
 
-  onIdle(sessionId?: string): void {
-    if (sessionId) {
-      this.currentSessionId = sessionId;
+  onIdle(sessionId?: string, title?: string): void {
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
+    if (title) {
+      this.sessionTitles.set(sid, title);
     }
 
-    if (this.currentStatus === 'idle') {
+    const current = this.sessionStatuses.get(sid) ?? 'idle';
+    if (current === 'idle' || current === 'awaiting_approval') {
       return;
     }
 
-    if (this.currentStatus === 'awaiting_approval') {
+    if (this.debounceTimers.has(sid)) {
       return;
     }
 
-    if (this.debounceTimer !== null) {
-      return;
-    }
+    const timer = setTimeout(() => {
+      this.debounceTimers.delete(sid);
+      const st = this.sessionStatuses.get(sid);
+      if (st === 'generating') {
+        this.sessionStatuses.set(sid, 'idle');
+        this.emitStatusChanged(sid, 'idle');
 
-    this.debounceTimer = setTimeout(() => {
-      this.debounceTimer = null;
-      if (this.currentStatus === 'generating') {
-        const sid = this.currentSessionId ?? 'default-session';
-        this.currentStatus = 'idle';
-        this.emitStatusChanged('idle');
-
+        const resolvedTitle = this.sessionTitles.get(sid);
         const finishedEvent: RunFinishedEvent = {
           type: 'run_finished',
           sessionId: sid,
+          sessionTitle: resolvedTitle,
           at: Date.now()
         };
         this.emit(finishedEvent);
       }
     }, this.debounceMs);
+
+    this.debounceTimers.set(sid, timer);
   }
 
   onStopped(sessionId?: string): void {
-    if (sessionId) {
-      this.currentSessionId = sessionId;
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
+    this.cancelDebounce(sid);
+    this.sessionApprovals.delete(sid);
+    this.sessionStatuses.set(sid, 'idle');
+    this.emitStatusChanged(sid, 'idle');
+  }
+
+  onSessionCreated(sessionId: string, title: string): void {
+    this.sessionTitles.set(sessionId, title);
+    this.sessionStatuses.set(sessionId, 'idle');
+    const event: SessionCreatedEvent = {
+      type: 'session_created',
+      sessionId,
+      title,
+      at: Date.now()
+    };
+    this.emit(event);
+  }
+
+  onMessageAppended(sessionId: string, role: 'user' | 'agent', text: string, title?: string): void {
+    if (title) {
+      this.sessionTitles.set(sessionId, title);
     }
-    this.cancelDebounce();
-    this.currentApproval = null;
-    this.currentStatus = 'idle';
-    this.emitStatusChanged('idle');
+    const resolvedTitle = title ?? this.sessionTitles.get(sessionId);
+    const event: MessageAppendedEvent = {
+      type: 'message_appended',
+      sessionId,
+      sessionTitle: resolvedTitle,
+      role,
+      text,
+      at: Date.now()
+    };
+    this.emit(event);
   }
 
   onError(message: string, sessionId?: string): void {
-    if (sessionId) {
-      this.currentSessionId = sessionId;
-    }
-    this.cancelDebounce();
-    this.currentStatus = 'error';
-    this.emitStatusChanged('error');
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
+    this.cancelDebounce(sid);
+    this.sessionStatuses.set(sid, 'error');
+    this.emitStatusChanged(sid, 'error');
 
     const errorEvent: BridgeErrorEvent = {
       type: 'bridge_error',
@@ -137,9 +212,14 @@ export class AgentStateMachine {
   }
 
   reset(): void {
-    this.cancelDebounce();
-    this.currentStatus = 'idle';
-    this.currentApproval = null;
+    for (const timer of this.debounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.debounceTimers.clear();
+    this.sessionStatuses.clear();
+    this.sessionTitles.clear();
+    this.sessionApprovals.clear();
+    this.activeSessionId = null;
   }
 
   onEvent(handler: (e: AgentEvent) => void): { dispose(): void } {
@@ -151,17 +231,18 @@ export class AgentStateMachine {
     };
   }
 
-  private cancelDebounce(): void {
-    if (this.debounceTimer !== null) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
+  private cancelDebounce(sessionId: string): void {
+    const timer = this.debounceTimers.get(sessionId);
+    if (timer) {
+      clearTimeout(timer);
+      this.debounceTimers.delete(sessionId);
     }
   }
 
-  private emitStatusChanged(status: RunStatus): void {
+  private emitStatusChanged(sessionId: string, status: RunStatus): void {
     const event: StatusChangedEvent = {
       type: 'status_changed',
-      sessionId: this.currentSessionId ?? 'default-session',
+      sessionId,
       status,
       at: Date.now()
     };
