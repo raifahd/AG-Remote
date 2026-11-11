@@ -109,3 +109,18 @@ export async function saveQuietHoursSettings(settings) {
   await setItem(QUIET_HOURS_KEY, JSON.stringify(settings));
 }
 
+const CHAT_FONT_SIZE_KEY = 'ag_remote_chat_font_size_v1';
+
+export async function getChatFontSize() {
+  try {
+    const raw = await getItem(CHAT_FONT_SIZE_KEY);
+    return raw || 'medium';
+  } catch {
+    return 'medium';
+  }
+}
+
+export async function saveChatFontSize(size) {
+  await setItem(CHAT_FONT_SIZE_KEY, size);
+}
+

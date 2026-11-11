@@ -22,7 +22,15 @@ import { updateSettings } from '../../src/api.js';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { theme, isDark, setDark, accent, setAccent } = useTheme();
+  const {
+    theme,
+    isDark,
+    setDark,
+    accent,
+    setAccent,
+    chatFontSize,
+    setChatFontSize
+  } = useTheme();
 
   const [toast, setToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('New pairing code ready');
@@ -159,6 +167,49 @@ export default function SettingsScreen() {
                       activeOpacity={0.8}
                     >
                       {isSelected && <Icon name="check" size={14} color="#ffffff" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
+            <View style={[styles.verticalSetting, { borderTopWidth: 1, borderTopColor: theme.border, paddingTop: 14, marginTop: 4 }]}>
+              <View style={styles.settingTextCol}>
+                <Text style={[styles.settingTitle, { color: theme.text }]}>Chat font size</Text>
+                <Text style={[styles.settingDetail, { color: theme.muted }]}>
+                  Text size inside the chat screen only
+                </Text>
+              </View>
+              <View style={[styles.segmented, { backgroundColor: theme.raised, marginTop: 10, alignSelf: 'stretch', justifyContent: 'space-between' }]}>
+                {[
+                  { key: 'small', label: 'Small' },
+                  { key: 'medium', label: 'Default' },
+                  { key: 'large', label: 'Large' },
+                  { key: 'xlarge', label: 'XL' }
+                ].map((item) => {
+                  const isSelected = chatFontSize === item.key;
+                  return (
+                    <TouchableOpacity
+                      key={item.key}
+                      style={[
+                        styles.segmentButton,
+                        { flex: 1, justifyContent: 'center' },
+                        isSelected && [styles.segmentSelected, { backgroundColor: theme.surface }]
+                      ]}
+                      onPress={() => setChatFontSize(item.key)}
+                      activeOpacity={0.8}
+                    >
+                      <Text
+                        style={[
+                          styles.segmentText,
+                          {
+                            color: isSelected ? theme.accent : theme.muted,
+                            fontWeight: isSelected ? '700' : '500'
+                          }
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
                     </TouchableOpacity>
                   );
                 })}

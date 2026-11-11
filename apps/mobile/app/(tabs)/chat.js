@@ -17,7 +17,7 @@ import {
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
-import { useTheme } from '../../src/theme.js';
+import { useTheme, CHAT_FONT_SIZES } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
 import StatusBadge from '../../src/components/StatusBadge.js';
@@ -34,7 +34,25 @@ import {
 } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
-function CodeSnippet({ code, lang = 'code', theme }) {
+function formatSessionTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return '';
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isToday) {
+    return timeStr;
+  }
+  const isThisYear = date.getFullYear() === now.getFullYear();
+  if (isThisYear) {
+    const month = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    return `${month}, ${timeStr}`;
+  }
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })}, ${timeStr}`;
+}
+
+function CodeSnippet({ code, lang = 'code', theme, fontSize = 13 }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -42,23 +60,27 @@ function CodeSnippet({ code, lang = 'code', theme }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const codeFontSize = Math.max(9, fontSize - 2);
+
   return (
     <View style={[styles.codeBubble, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       <View style={[styles.codeHeader, { backgroundColor: theme.raised }]}>
-        <Text style={[styles.codeLang, { color: theme.accent }]}>{lang}</Text>
+        <Text style={[styles.codeLang, { color: theme.accent, fontSize: codeFontSize }]}>{lang}</Text>
         <TouchableOpacity style={styles.copyButton} onPress={handleCopy} activeOpacity={0.7}>
           <Icon name={copied ? 'check' : 'copy'} size={15} color={theme.muted} />
-          <Text style={[styles.copyText, { color: theme.muted }]}>
+          <Text style={[styles.copyText, { color: theme.muted, fontSize: codeFontSize }]}>
             {copied ? 'Copied' : 'Copy'}
           </Text>
         </TouchableOpacity>
       </View>
-      <Text style={[styles.codePre, { color: theme.text }]}>{code.trimEnd()}</Text>
+      <Text style={[styles.codePre, { color: theme.text, fontSize: codeFontSize, lineHeight: Math.round(codeFontSize * 1.5) }]}>
+        {code.trimEnd()}
+      </Text>
     </View>
   );
 }
 
-function parseInline(text, theme, lineKey) {
+function parseInline(text, theme, lineKey, fontSize = 13) {
   if (!text) return [];
 
   const linkRegex = /\[([^\]]+)\]\((file:\/\/\/[^\)]+|https?:\/\/[^\)]+)\)|(file:\/\/\/[^\s\)\],]+)/g;
@@ -111,7 +133,7 @@ function parseInline(text, theme, lineKey) {
       elements.push(
         <Text
           key={segKey}
-          style={[styles.fileLinkInline, { color: theme.accent }]}
+          style={[styles.fileLinkInline, { color: theme.accent, fontSize }]}
         >
           {` 📄 ${seg.label} `}
         </Text>
@@ -120,7 +142,7 @@ function parseInline(text, theme, lineKey) {
       elements.push(
         <Text
           key={segKey}
-          style={[styles.webLinkInline, { color: theme.accent }]}
+          style={[styles.webLinkInline, { color: theme.accent, fontSize }]}
         >
           {seg.label}
         </Text>
@@ -135,7 +157,7 @@ function parseInline(text, theme, lineKey) {
           elements.push(
             <Text
               key={`${segKey}-ic-${pIdx}`}
-              style={[styles.inlineCode, { color: theme.accent }]}
+              style={[styles.inlineCode, { color: theme.accent, fontSize: Math.max(10, fontSize - 1) }]}
             >
               {part}
             </Text>
@@ -162,7 +184,187 @@ function parseInline(text, theme, lineKey) {
   return elements;
 }
 
-function MarkdownMessage({ text, theme }) {
+function isTableDelimiter(line) {
+  if (!line || !line.includes('-')) return false;
+  const trimmed = line.trim();
+  return /^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(trimmed);
+}
+
+function parseTableRow(line) {
+  let content = line.trim();
+  if (content.startsWith('|')) content = content.slice(1);
+  if (content.endsWith('|')) content = content.slice(0, -1);
+  return content.split('|').map((c) => c.trim());
+}
+
+function parseTableAlignments(delimiterLine) {
+  const cells = parseTableRow(delimiterLine);
+  return cells.map((cell) => {
+    const trimmed = cell.trim();
+    const startColon = trimmed.startsWith(':');
+    const endColon = trimmed.endsWith(':');
+    if (startColon && endColon) return 'center';
+    if (endColon) return 'right';
+    return 'left';
+  });
+}
+
+function TableBlock({ headers, alignments, rows, theme, fontSize = 13, blockKey }) {
+  const cellFontSize = Math.max(10, fontSize - 1);
+  const colWidths = headers.map((h, colIdx) => {
+    let maxLen = h.length;
+    for (const r of rows) {
+      if (r[colIdx] && r[colIdx].length > maxLen) {
+        maxLen = r[colIdx].length;
+      }
+    }
+    return Math.min(220, Math.max(85, maxLen * 8.5));
+  });
+
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={true}
+      style={styles.tableScroll}
+      contentContainerStyle={{ paddingRight: 4 }}
+    >
+      <View style={[styles.tableContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View style={[styles.tableHeaderRow, { backgroundColor: theme.raised, borderBottomColor: theme.border }]}>
+          {headers.map((h, cIdx) => (
+            <View
+              key={`th-${cIdx}`}
+              style={[
+                styles.tableCell,
+                cIdx < headers.length - 1 && { borderRightWidth: 1, borderRightColor: theme.border },
+                { width: colWidths[cIdx] }
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tableHeaderText,
+                  {
+                    color: theme.text,
+                    fontSize: cellFontSize,
+                    textAlign: alignments[cIdx] || 'left'
+                  }
+                ]}
+              >
+                {parseInline(h, theme, `${blockKey}-th-${cIdx}`, cellFontSize)}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {rows.map((row, rIdx) => {
+          const isLast = rIdx === rows.length - 1;
+          const isEven = rIdx % 2 === 1;
+          return (
+            <View
+              key={`tr-${rIdx}`}
+              style={[
+                styles.tableRow,
+                !isLast && { borderBottomColor: theme.border, borderBottomWidth: 1 },
+                isEven && { backgroundColor: theme.raised }
+              ]}
+            >
+              {headers.map((_, cIdx) => {
+                const cellText = row[cIdx] || '';
+                return (
+                  <View
+                    key={`td-${rIdx}-${cIdx}`}
+                    style={[
+                      styles.tableCell,
+                      cIdx < headers.length - 1 && { borderRightWidth: 1, borderRightColor: theme.border },
+                      { width: colWidths[cIdx] }
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.tableCellText,
+                        {
+                          color: theme.text,
+                          fontSize: cellFontSize,
+                          textAlign: alignments[cIdx] || 'left'
+                        }
+                      ]}
+                    >
+                      {parseInline(cellText, theme, `${blockKey}-td-${rIdx}-${cIdx}`, cellFontSize)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          );
+        })}
+      </View>
+    </ScrollView>
+  );
+}
+
+const CALLOUT_CONFIGS = {
+  NOTE: { label: 'NOTE', icon: 'chat', color: '#3b82f6' },
+  TIP: { label: 'TIP', icon: 'check', color: '#10b981' },
+  IMPORTANT: { label: 'IMPORTANT', icon: 'shield', color: '#8b5cf6' },
+  WARNING: { label: 'WARNING', icon: 'shield', color: '#f59e0b' },
+  CAUTION: { label: 'CAUTION', icon: 'x', color: '#ef4444' }
+};
+
+function CalloutBlock({ type, lines, theme, fontSize = 13, blockKey }) {
+  const conf = CALLOUT_CONFIGS[type] || { label: type, icon: 'shield', color: theme.accent };
+
+  return (
+    <View
+      style={[
+        styles.calloutCard,
+        {
+          backgroundColor: theme.raised,
+          borderColor: theme.border,
+          borderLeftColor: conf.color
+        }
+      ]}
+    >
+      <View style={styles.calloutHeader}>
+        <Icon name={conf.icon} size={14} color={conf.color} />
+        <Text style={[styles.calloutLabel, { color: conf.color }]}>{conf.label}</Text>
+      </View>
+      <View style={styles.calloutBody}>
+        {lines.map((l, lIdx) => (
+          <Text
+            key={`co-${lIdx}`}
+            style={[styles.bubbleText, { color: theme.text, fontSize, lineHeight: Math.round(fontSize * 1.5) }]}
+          >
+            {parseInline(l, theme, `${blockKey}-co-${lIdx}`, fontSize)}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function QuoteBlock({ lines, theme, fontSize = 13, blockKey }) {
+  return (
+    <View
+      style={[
+        styles.quoteCard,
+        {
+          borderLeftColor: theme.subtle || theme.border,
+          backgroundColor: theme.raised
+        }
+      ]}
+    >
+      {lines.map((l, lIdx) => (
+        <Text
+          key={`q-${lIdx}`}
+          style={[styles.bubbleText, { color: theme.muted, fontSize, lineHeight: Math.round(fontSize * 1.5) }]}
+        >
+          {parseInline(l, theme, `${blockKey}-q-${lIdx}`, fontSize)}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
+function MarkdownMessage({ text, theme, fontSize = 13 }) {
   if (!text) return null;
 
   const tripleTick = String.fromCharCode(96, 96, 96);
@@ -188,44 +390,155 @@ function MarkdownMessage({ text, theme }) {
           code={codeContent}
           lang={lang}
           theme={theme}
+          fontSize={fontSize}
         />
       );
     } else {
       const lines = block.split('\n');
-      for (let j = 0; j < lines.length; j++) {
+      let j = 0;
+      while (j < lines.length) {
         const line = lines[j];
-        if (!line.trim()) {
+        const trimmed = line.trim();
+
+        if (!trimmed) {
           elements.push(<View key={`sp-${i}-${j}`} style={{ height: 6 }} />);
+          j++;
+          continue;
+        }
+
+        if (line.includes('|') && j + 1 < lines.length && isTableDelimiter(lines[j + 1])) {
+          const headers = parseTableRow(line);
+          const alignments = parseTableAlignments(lines[j + 1]);
+          const rows = [];
+          j += 2;
+          while (j < lines.length && lines[j].trim() && lines[j].includes('|')) {
+            rows.push(parseTableRow(lines[j]));
+            j++;
+          }
+          elements.push(
+            <TableBlock
+              key={`tbl-${i}-${j}`}
+              headers={headers}
+              alignments={alignments}
+              rows={rows}
+              theme={theme}
+              fontSize={fontSize}
+              blockKey={`${i}-${j}`}
+            />
+          );
+          continue;
+        }
+
+        if (trimmed.startsWith('>')) {
+          const rawQuoteLines = [];
+          const quoteStartIndex = j;
+          while (j < lines.length && lines[j].trim().startsWith('>')) {
+            rawQuoteLines.push(lines[j].trim().replace(/^>\s?/, ''));
+            j++;
+          }
+          const firstLine = rawQuoteLines[0] || '';
+          const alertMatch = firstLine.match(/^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*(.*)$/i);
+          if (alertMatch) {
+            const alertType = alertMatch[1].toUpperCase();
+            const remainder = alertMatch[2]?.trim();
+            const bodyLines = remainder ? [remainder, ...rawQuoteLines.slice(1)] : rawQuoteLines.slice(1);
+            elements.push(
+              <CalloutBlock
+                key={`co-${i}-${quoteStartIndex}`}
+                type={alertType}
+                lines={bodyLines.length > 0 ? bodyLines : ['']}
+                theme={theme}
+                fontSize={fontSize}
+                blockKey={`${i}-${quoteStartIndex}`}
+              />
+            );
+          } else {
+            elements.push(
+              <QuoteBlock
+                key={`qb-${i}-${quoteStartIndex}`}
+                lines={rawQuoteLines}
+                theme={theme}
+                fontSize={fontSize}
+                blockKey={`${i}-${quoteStartIndex}`}
+              />
+            );
+          }
+          continue;
+        }
+
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+          elements.push(
+            <View key={`hr-${i}-${j}`} style={[styles.mdHr, { backgroundColor: theme.border }]} />
+          );
+          j++;
+          continue;
+        }
+
+        const taskMatch = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.*)$/);
+        if (taskMatch) {
+          const isChecked = taskMatch[1].toLowerCase() === 'x';
+          elements.push(
+            <View key={`task-${i}-${j}`} style={styles.taskRow}>
+              <Icon
+                name={isChecked ? 'check' : 'shield'}
+                size={14}
+                color={isChecked ? theme.accent : theme.muted}
+              />
+              <Text style={[styles.bubbleText, { color: theme.text, fontSize, lineHeight: Math.round(fontSize * 1.5), flex: 1, marginLeft: 6 }]}>
+                {parseInline(taskMatch[2], theme, `${i}-${j}`, fontSize)}
+              </Text>
+            </View>
+          );
+          j++;
+          continue;
+        }
+
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)$/);
+        if (numMatch) {
+          elements.push(
+            <View key={`num-${i}-${j}`} style={styles.bulletRow}>
+              <Text style={[styles.bulletDot, { color: theme.accent, fontSize }]}>
+                {`${numMatch[1]}. `}
+              </Text>
+              <Text style={[styles.bubbleText, { color: theme.text, fontSize, lineHeight: Math.round(fontSize * 1.5), flex: 1 }]}>
+                {parseInline(numMatch[2], theme, `${i}-${j}`, fontSize)}
+              </Text>
+            </View>
+          );
+          j++;
           continue;
         }
 
         if (line.startsWith('### ')) {
           elements.push(
-            <Text key={`h3-${i}-${j}`} style={[styles.mdH3, { color: theme.text }]}>
+            <Text key={`h3-${i}-${j}`} style={[styles.mdH3, { color: theme.text, fontSize: fontSize + 2 }]}>
               {line.slice(4)}
             </Text>
           );
+          j++;
           continue;
         }
         if (line.startsWith('## ')) {
           elements.push(
-            <Text key={`h2-${i}-${j}`} style={[styles.mdH2, { color: theme.text }]}>
+            <Text key={`h2-${i}-${j}`} style={[styles.mdH2, { color: theme.text, fontSize: fontSize + 4 }]}>
               {line.slice(3)}
             </Text>
           );
+          j++;
           continue;
         }
         if (line.startsWith('# ')) {
           elements.push(
-            <Text key={`h1-${i}-${j}`} style={[styles.mdH1, { color: theme.text }]}>
+            <Text key={`h1-${i}-${j}`} style={[styles.mdH1, { color: theme.text, fontSize: fontSize + 6 }]}>
               {line.slice(2)}
             </Text>
           );
+          j++;
           continue;
         }
 
-        const isBullet = line.trim().startsWith('- ') || line.trim().startsWith('* ');
-        const lineContent = isBullet ? line.trim().slice(2) : line;
+        const isBullet = trimmed.startsWith('- ') || trimmed.startsWith('* ');
+        const lineContent = isBullet ? trimmed.slice(2) : line;
 
         elements.push(
           <View
@@ -233,13 +546,14 @@ function MarkdownMessage({ text, theme }) {
             style={isBullet ? styles.bulletRow : styles.textRow}
           >
             {isBullet && (
-              <Text style={[styles.bulletDot, { color: theme.accent }]}>• </Text>
+              <Text style={[styles.bulletDot, { color: theme.accent, fontSize }]}>• </Text>
             )}
-            <Text style={[styles.bubbleText, { color: theme.text }]}>
-              {parseInline(lineContent, theme, `${i}-${j}`)}
+            <Text style={[styles.bubbleText, { color: theme.text, fontSize, lineHeight: Math.round(fontSize * 1.5) }]}>
+              {parseInline(lineContent, theme, `${i}-${j}`, fontSize)}
             </Text>
           </View>
         );
+        j++;
       }
     }
   }
@@ -528,7 +842,7 @@ function AgentWorkingIndicator({ theme }) {
   );
 }
 
-const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme }) {
+const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, fontSize = 13 }) {
   if (!item) return null;
   const isUser = item.role === 'user' || item.sender === 'user';
   const isTool = item.kind === 'tool';
@@ -614,7 +928,18 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
             </View>
           )}
           {Boolean(bodyText) && (
-            <Text style={[styles.userBubbleText, { color: bubbleTextColor }]}>{bodyText}</Text>
+            <Text
+              style={[
+                styles.userBubbleText,
+                {
+                  color: bubbleTextColor,
+                  fontSize,
+                  lineHeight: Math.round(fontSize * 1.5)
+                }
+              ]}
+            >
+              {bodyText}
+            </Text>
           )}
         </View>
       </View>
@@ -635,7 +960,7 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
           }
         ]}
       >
-        <MarkdownMessage text={item.text} theme={theme} />
+        <MarkdownMessage text={item.text} theme={theme} fontSize={fontSize} />
       </View>
     </View>
   );
@@ -644,7 +969,9 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
 export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const { theme, isDark } = useTheme();
+  const { theme, isDark, chatFontSize } = useTheme();
+  const fontConfig = CHAT_FONT_SIZES[chatFontSize] || CHAT_FONT_SIZES.medium;
+  const chatTextSize = fontConfig.size;
   const [profile, setProfile] = useState(null);
   const [allProfiles, setAllProfiles] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -659,6 +986,14 @@ export default function ChatScreen() {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   const [sessions, setSessions] = useState([]);
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const timeA = a.lastActivityAt || a.lastModified || 0;
+      const timeB = b.lastActivityAt || b.lastModified || 0;
+      if (timeA !== timeB) return timeB - timeA;
+      return (b.id || '').localeCompare(a.id || '');
+    });
+  }, [sessions]);
   const [currentSessionId, setCurrentSessionId] = useState(params?.sessionId || null);
   const [currentSessionTitle, setCurrentSessionTitle] = useState(params?.sessionTitle || null);
   const [sessionsModalVisible, setSessionsModalVisible] = useState(false);
@@ -945,8 +1280,8 @@ export default function ChatScreen() {
   const canSend = !sending && (Boolean(inputText.trim()) || attachments.length > 0);
 
   const renderItem = useCallback(
-    ({ item }) => <ChatMessageBubble item={item} theme={theme} />,
-    [theme]
+    ({ item }) => <ChatMessageBubble item={item} theme={theme} fontSize={chatTextSize} />,
+    [theme, chatTextSize]
   );
 
   const statusLabel = wsConnected
@@ -1202,15 +1537,16 @@ export default function ChatScreen() {
             </View>
 
             <ScrollView style={{ maxHeight: 360 }}>
-              {sessions.length === 0 ? (
+              {sortedSessions.length === 0 ? (
                 <View style={{ paddingVertical: 20, alignItems: 'center' }}>
                   <Text style={{ color: theme.muted, fontSize: 12 }}>No conversations found</Text>
                 </View>
               ) : (
-                sessions.map((s) => {
+                sortedSessions.map((s) => {
                   const isSelected = s.id === currentSessionId;
                   const statusTone = s.status === 'generating' ? 'running' : s.status === 'awaiting_approval' ? 'warn' : 'muted';
                   const badgeText = s.status === 'generating' ? 'RUNNING' : s.status === 'awaiting_approval' ? 'APPROVAL' : 'IDLE';
+                  const timeText = formatSessionTime(s.lastActivityAt || s.lastModified);
 
                   return (
                     <TouchableOpacity
@@ -1225,11 +1561,18 @@ export default function ChatScreen() {
                       onPress={() => handleSwitchSession(s)}
                     >
                       <View style={styles.sessionRowLeft}>
-                        <Text style={[styles.sessionRowTitle, { color: theme.text }]} numberOfLines={1}>
-                          {s.title || 'Untitled'}
-                        </Text>
+                        <View style={styles.sessionRowTitleRow}>
+                          <Text style={[styles.sessionRowTitle, { color: theme.text }]} numberOfLines={1}>
+                            {s.title || 'Untitled'}
+                          </Text>
+                          {Boolean(timeText) && (
+                            <Text style={[styles.sessionRowTime, { color: theme.muted }]}>
+                              {timeText}
+                            </Text>
+                          )}
+                        </View>
                         <Text style={[styles.sessionRowMeta, { color: theme.muted }]}>
-                          {s.stepCount ? `${s.stepCount} steps` : ''}
+                          {s.stepCount ? `${s.stepCount} steps` : 'Active conversation'}
                         </Text>
                       </View>
                       <StatusBadge text={badgeText} tone={statusTone} />
@@ -1520,8 +1863,7 @@ const styles = StyleSheet.create({
   },
   fileLinkInline: {
     fontFamily: fontMedium,
-    fontSize: 12,
-    textDecorationLine: 'underline'
+    fontSize: 12
   },
   webLinkInline: {
     fontFamily: fontMedium,
@@ -2019,5 +2361,82 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  tableScroll: {
+    marginVertical: 6
+  },
+  tableContainer: {
+    borderWidth: 1,
+    borderRadius: 8,
+    overflow: 'hidden'
+  },
+  tableHeaderRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1
+  },
+  tableRow: {
+    flexDirection: 'row'
+  },
+  tableCell: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    justifyContent: 'center'
+  },
+  tableHeaderCell: {},
+  tableHeaderText: {
+    fontFamily: fontBold
+  },
+  tableCellText: {
+    fontFamily: fontRegular
+  },
+  calloutCard: {
+    borderWidth: 1,
+    borderLeftWidth: 4,
+    borderRadius: 8,
+    padding: 10,
+    marginVertical: 6,
+    gap: 4
+  },
+  calloutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 2
+  },
+  calloutLabel: {
+    fontFamily: fontBold,
+    fontSize: 11,
+    letterSpacing: 0.5
+  },
+  calloutBody: {
+    gap: 2
+  },
+  quoteCard: {
+    borderLeftWidth: 3,
+    borderRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginVertical: 4,
+    gap: 2
+  },
+  mdHr: {
+    height: 1,
+    marginVertical: 10
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 3,
+    marginBottom: 1
+  },
+  sessionRowTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 2
+  },
+  sessionRowTime: {
+    fontSize: 11
   }
 });

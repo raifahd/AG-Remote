@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
-import AsyncStorage from './storage.js';
+import { getChatFontSize, saveChatFontSize } from './storage.js';
+
+export const CHAT_FONT_SIZES = {
+  small: { label: 'Small', size: 12, lineHeight: 18 },
+  medium: { label: 'Default', size: 13, lineHeight: 20 },
+  large: { label: 'Large', size: 15, lineHeight: 22 },
+  xlarge: { label: 'XL', size: 17, lineHeight: 25 }
+};
 
 export const ACCENTS = [
   '#7C5CFF',
@@ -65,13 +72,26 @@ const ThemeContext = createContext({
   toggleTheme: () => {},
   setDark: () => {},
   accent: ACCENTS[0],
-  setAccent: () => {}
+  setAccent: () => {},
+  chatFontSize: 'medium',
+  setChatFontSize: () => {}
 });
 
 export function ThemeProvider({ children }) {
   const systemScheme = useColorScheme();
   const [isDark, setIsDark] = useState(true);
   const [accent, setAccentState] = useState(ACCENTS[0]);
+  const [chatFontSize, setChatFontSizeState] = useState('medium');
+
+  useEffect(() => {
+    async function loadFont() {
+      const saved = await getChatFontSize();
+      if (saved && CHAT_FONT_SIZES[saved]) {
+        setChatFontSizeState(saved);
+      }
+    }
+    loadFont();
+  }, []);
 
   useEffect(() => {
     if (systemScheme) {
@@ -91,10 +111,26 @@ export function ThemeProvider({ children }) {
     setAccentState(color);
   };
 
+  const setChatFontSize = (size) => {
+    setChatFontSizeState(size);
+    saveChatFontSize(size);
+  };
+
   const theme = isDark ? getDarkTheme(accent) : getLightTheme(accent);
 
   return (
-    <ThemeContext.Provider value={{ theme, isDark, toggleTheme, setDark, accent, setAccent }}>
+    <ThemeContext.Provider
+      value={{
+        theme,
+        isDark,
+        toggleTheme,
+        setDark,
+        accent,
+        setAccent,
+        chatFontSize,
+        setChatFontSize
+      }}
+    >
       {children}
     </ThemeContext.Provider>
   );
