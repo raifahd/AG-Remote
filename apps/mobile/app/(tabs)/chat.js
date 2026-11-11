@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -274,6 +274,181 @@ function ChatEmptyState({
   );
 }
 
+const WORKING_PHRASES = [
+  'Thinking through workspace...',
+  'Analyzing context & code...',
+  'Formulating solution plan...',
+  'Writing implementation steps...',
+  'Executing agent actions...',
+  'Reviewing and refining output...'
+];
+
+function AgentWorkingIndicator({ theme }) {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [seconds, setSeconds] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSeconds((s) => s + 1);
+    }, 1000);
+
+    const phraseTimer = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true
+        })
+      ]).start();
+      setPhraseIndex((prev) => (prev + 1) % WORKING_PHRASES.length);
+    }, 2800);
+
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.14,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 800,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true
+        })
+      ])
+    );
+    pulse.start();
+
+    const makeDotAnim = (anim, delay) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: -5,
+            duration: 280,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true
+          }),
+          Animated.timing(anim, {
+            toValue: 0,
+            duration: 280,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true
+          }),
+          Animated.delay(440 - delay)
+        ])
+      );
+    };
+
+    const d1 = makeDotAnim(dot1, 0);
+    const d2 = makeDotAnim(dot2, 140);
+    const d3 = makeDotAnim(dot3, 280);
+    d1.start();
+    d2.start();
+    d3.start();
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(phraseTimer);
+      pulse.stop();
+      d1.stop();
+      d2.stop();
+      d3.stop();
+    };
+  }, []);
+
+  const formatTime = (s) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <View style={styles.agentMessageRow}>
+      <Animated.View
+        style={[
+          styles.agentAvatar,
+          {
+            backgroundColor: theme.accent,
+            transform: [{ scale: pulseAnim }]
+          }
+        ]}
+      >
+        <Text style={styles.agentAvatarText}>AG</Text>
+      </Animated.View>
+      <View
+        style={[
+          styles.agentWorkingBubble,
+          {
+            backgroundColor: theme.surface,
+            borderColor: `${theme.accent}45`
+          }
+        ]}
+      >
+        <View style={styles.agentWorkingHeader}>
+          <View style={styles.agentWorkingBadge}>
+            <View style={[styles.agentWorkingLiveDot, { backgroundColor: theme.accent }]} />
+            <Text style={[styles.agentWorkingBadgeText, { color: theme.accent }]}>
+              THINKING
+            </Text>
+          </View>
+          <Text style={[styles.agentWorkingTimer, { color: theme.muted }]}>
+            {formatTime(seconds)}
+          </Text>
+        </View>
+
+        <Animated.View style={[styles.agentWorkingPhraseWrap, { opacity: fadeAnim }]}>
+          <Text style={[styles.agentWorkingPhrase, { color: theme.text }]}>
+            {WORKING_PHRASES[phraseIndex]}
+          </Text>
+        </Animated.View>
+
+        <View style={styles.agentWorkingDotsRow}>
+          <Animated.View
+            style={[
+              styles.agentWorkingDot,
+              {
+                backgroundColor: theme.accent,
+                transform: [{ translateY: dot1 }]
+              }
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.agentWorkingDot,
+              {
+                backgroundColor: theme.accent,
+                transform: [{ translateY: dot2 }]
+              }
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.agentWorkingDot,
+              {
+                backgroundColor: theme.accent,
+                transform: [{ translateY: dot3 }]
+              }
+            ]}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
 const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme }) {
   if (!item) return null;
   const isUser = item.role === 'user' || item.sender === 'user';
@@ -344,15 +519,16 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme })
       ? attachmentLine.split('|')[0].replace(/\[Attachment:\s*|\s*\]/g, '').trim()
       : null;
 
-    const bubbleBg = theme.userBubble || (theme.mode === 'dark' ? '#ffffff' : '#000000');
-    const bubbleTextColor = theme.userText || (theme.mode === 'dark' ? '#000000' : '#ffffff');
+    const bubbleBg = theme.userBubble || (theme.mode === 'dark' ? '#2f2f2f' : '#f2f2f2');
+    const bubbleBorder = theme.userBubbleBorder || (theme.mode === 'dark' ? '#3d3d3d' : '#e4e4e7');
+    const bubbleTextColor = theme.userText || (theme.mode === 'dark' ? '#ececec' : '#0d0d0d');
 
     return (
       <View style={styles.userMessageRow}>
-        <View style={[styles.userBubble, { backgroundColor: bubbleBg }]}>
+        <View style={[styles.userBubble, { backgroundColor: bubbleBg, borderColor: bubbleBorder, borderWidth: 1 }]}>
           {badgeLabel && (
-            <View style={[styles.userAttachmentBadge, { backgroundColor: theme.mode === 'dark' ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.15)' }]}>
-              <Icon name="attach" size={13} color={bubbleTextColor} />
+            <View style={[styles.userAttachmentBadge, { backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }]}>
+              <Icon name="attach" size={13} color={theme.accent} />
               <Text style={[styles.userAttachmentText, { color: bubbleTextColor }]} numberOfLines={2}>
                 {badgeLabel}
               </Text>
@@ -399,12 +575,16 @@ export default function ChatScreen() {
   const [wsConnected, setWsConnected] = useState(false);
   const [blinker, setBlinker] = useState(true);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
 
   const flatListRef = useRef(null);
-  const initialScrolledRef = useRef(false);
   const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
+
+  const reversedMessages = useMemo(() => {
+    return messages && messages.length > 0 ? [...messages].reverse() : [];
+  }, [messages]);
 
   useEffect(() => {
     if (!isKeyboardOpenRef.current) {
@@ -433,11 +613,10 @@ export default function ChatScreen() {
       }).start();
 
       setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        if (messages && messages.length > 0) {
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }
       }, 50);
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, duration + 50);
     };
 
     const onKeyboardHide = (e) => {
@@ -466,7 +645,7 @@ export default function ChatScreen() {
       hideSub1.remove();
       hideSub2.remove();
     };
-  }, [insets.bottom]);
+  }, [insets.bottom, messages]);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -481,15 +660,7 @@ export default function ChatScreen() {
           fetchMessages(active, 50).catch(() => []),
           fetchState(active).catch(() => null)
         ]);
-        if (list) {
-          setMessages(list);
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }, 30);
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }, 120);
-        }
+        if (list) setMessages(list);
         if (st?.status) setAgentStatus(st.status);
       }
     } catch {}
@@ -497,18 +668,7 @@ export default function ChatScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      initialScrolledRef.current = false;
-      loadMessages().then(() => {
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }, 30);
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }, 150);
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: false });
-        }, 350);
-      });
+      loadMessages();
     }, [loadMessages])
   );
 
@@ -527,7 +687,9 @@ export default function ChatScreen() {
   }, [profile, loadMessages]);
 
   const scrollToBottom = () => {
-    flatListRef.current?.scrollToEnd({ animated: true });
+    if (messages && messages.length > 0) {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }
   };
 
   const handleSwitchWorkspace = async (target) => {
@@ -634,30 +796,28 @@ export default function ChatScreen() {
       <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
         <FlatList
           ref={flatListRef}
-          data={messages || []}
+          inverted={messages.length > 0}
+          data={messages.length > 0 ? reversedMessages : []}
           keyExtractor={(item, index) => `${item?.id || 'msg'}-${index}`}
           renderItem={renderItem}
           initialNumToRender={15}
           maxToRenderPerBatch={10}
           windowSize={11}
           removeClippedSubviews={Platform.OS === 'android'}
-          onContentSizeChange={() => {
-            if (!initialScrolledRef.current && messages.length > 0) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-              initialScrolledRef.current = true;
-            }
+          onScroll={(e) => {
+            const y = e.nativeEvent.contentOffset.y;
+            setShowScrollBottom(y > 140);
           }}
-          onLayout={() => {
-            if (messages.length > 0) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
+          scrollEventThrottle={16}
           contentContainerStyle={[
             styles.listContent,
             messages.length === 0 && styles.listContentEmpty
           ]}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
+            isWorking ? <AgentWorkingIndicator theme={theme} /> : null
+          }
+          ListFooterComponent={
             messages.length > 0 ? (
               <Text style={[styles.dateLabel, { color: theme.subtle }]}>TODAY, 10:42</Text>
             ) : null
@@ -671,39 +831,9 @@ export default function ChatScreen() {
               theme={theme}
             />
           }
-          ListFooterComponent={
-            isWorking ? (
-              <View style={styles.agentMessageRow}>
-                <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
-                  <Text style={styles.agentAvatarText}>AG</Text>
-                </View>
-                <View
-                  style={[
-                    styles.agentBubble,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: theme.border
-                    }
-                  ]}
-                >
-                  <Text style={[styles.bubbleText, { color: theme.text }]}>
-                    Agent is generating
-                    <Text
-                      style={[
-                        styles.blinker,
-                        { color: theme.accent, opacity: blinker ? 1 : 0 }
-                      ]}
-                    >
-                      {' |'}
-                    </Text>
-                  </Text>
-                </View>
-              </View>
-            ) : null
-          }
         />
 
-        {messages.length > 2 && (
+        {showScrollBottom && (
           <TouchableOpacity
             style={[
               styles.scrollBottomButton,
@@ -930,29 +1060,70 @@ const styles = StyleSheet.create({
     maxWidth: '90%'
   },
   userBubble: {
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-    borderTopLeftRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 18,
     borderTopRightRadius: 5,
-    borderBottomRightRadius: 16,
-    borderBottomLeftRadius: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.25,
-        shadowRadius: 18
-      },
-      android: {
-        elevation: 4
-      }
-    })
+    borderWidth: 1
   },
   userBubbleText: {
-    color: '#ffffff',
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: fontRegular
+  },
+  agentWorkingBubble: {
+    maxWidth: '84%',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 6
+  },
+  agentWorkingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12
+  },
+  agentWorkingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  agentWorkingLiveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  agentWorkingBadgeText: {
+    fontSize: 9,
+    fontFamily: fontBold,
+    letterSpacing: 0.8
+  },
+  agentWorkingTimer: {
+    fontSize: 10,
+    fontFamily: fontMono
+  },
+  agentWorkingPhraseWrap: {
+    minHeight: 20,
+    justifyContent: 'center'
+  },
+  agentWorkingPhrase: {
     fontSize: 12,
     lineHeight: 18,
-    fontFamily: fontRegular
+    fontFamily: fontMedium
+  },
+  agentWorkingDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: 10,
+    marginTop: 2
+  },
+  agentWorkingDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5
   },
   mdContainer: {
     gap: 4

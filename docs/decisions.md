@@ -229,3 +229,20 @@ Record of decisions, discoveries, and rationale for AG Remote.
     - Light mode: user bubble `#000000` with `#ffffff` text and badge elements.
 - **Left-Aligned Input Placeholder:**
   - Set `TextInput` to fixed `textAlign: 'left'` with `paddingLeft: 4` and `paddingRight: 6` so the "Message your agent" placeholder and typed text start naturally at the far left edge of the pill composer.
+
+## 2026-11-11: ChatGPT Grey User Bubbles, Inverted FlatList & Animated Working Indicator
+- **ChatGPT-Style Grey User Bubbles:**
+  - In dark mode: user bubble set to `#2f2f2f` with `#3d3d3d` border and `#ececec` text, matching the ChatGPT dark UI palette.
+  - In light mode: user bubble set to `#f2f2f2` with `#e4e4e7` border and `#0d0d0d` text.
+- **Inverted FlatList Architecture:**
+  - Diagnosed why non-inverted `scrollToEnd()` required multiple button taps: with 50+ messages and dynamic markdown heights, VirtualizedList only measured the first rendered window, stopping short at partial content offsets.
+  - Re-architected feed with `inverted={messages.length > 0}` and `reversedMessages`. Initial scroll offset is anchored at 0 (the latest response) natively on the very first frame.
+  - Positioned `ListHeaderComponent` at the bottom (for live generation indicator) and `ListFooterComponent` at the top (for date headers).
+  - Configured one-tap scroll-to-bottom button floating above composer when `offset.y > 140` scrolling smoothly back to offset 0.
+- **Rich Animated Agent Working Indicator:**
+  - Replaced static generation text with `AgentWorkingIndicator` featuring:
+    - Pulsing glowing avatar animation (`Animated.loop`).
+    - Glowing "THINKING" badge with pulsing accent dot.
+    - Live monospace elapsed timer (`formatTime(seconds)`).
+    - Dynamic cycling status phrases with smooth cross-fade transitions.
+    - 3-dot bouncing wave animation.

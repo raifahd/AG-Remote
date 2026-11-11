@@ -27,8 +27,9 @@ export function getDarkTheme(accent = ACCENTS[0]) {
     danger: '#ff5d5d',
     warning: '#f1b83a',
     success: '#31c77a',
-    userBubble: '#ffffff',
-    userText: '#000000',
+    userBubble: '#2f2f2f',
+    userBubbleBorder: '#3d3d3d',
+    userText: '#ececec',
     agentBubble: '#0d0d0d',
     agentText: '#ffffff',
     tabBar: '#161616'
@@ -49,8 +50,9 @@ export function getLightTheme(accent = ACCENTS[0]) {
     danger: '#ff5d5d',
     warning: '#f1b83a',
     success: '#31c77a',
-    userBubble: '#000000',
-    userText: '#ffffff',
+    userBubble: '#f2f2f2',
+    userBubbleBorder: '#e4e4e7',
+    userText: '#0d0d0d',
     agentBubble: '#f6f6f6',
     agentText: '#0a0a0a',
     tabBar: '#ffffff'
