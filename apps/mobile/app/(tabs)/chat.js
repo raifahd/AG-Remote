@@ -732,6 +732,7 @@ function AgentWorkingIndicator({ theme, startedAt }) {
     };
   }, [getElapsed]);
 
+  useEffect(() => {
     const phraseTimer = setInterval(() => {
       Animated.timing(fadeAnim, {
         toValue: 0,
@@ -797,7 +798,6 @@ function AgentWorkingIndicator({ theme, startedAt }) {
     d3.start();
 
     return () => {
-      clearInterval(timer);
       clearInterval(phraseTimer);
       pulse.stop();
       d1.stop();
