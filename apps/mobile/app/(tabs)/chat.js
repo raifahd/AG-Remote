@@ -33,7 +33,9 @@ import {
   sendStop,
   uploadFile,
   fetchModels,
-  selectModel
+  selectModel,
+  sendApprove,
+  sendReject
 } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
 
@@ -1054,6 +1056,7 @@ export default function ChatScreen() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [modelsModalVisible, setModelsModalVisible] = useState(false);
   const [workingStartedAt, setWorkingStartedAt] = useState(null);
+  const [pendingApproval, setPendingApproval] = useState(null);
 
   const flatListRef = useRef(null);
   const defaultBottomMargin = Math.max(insets.bottom, 8) + 66;
@@ -1201,6 +1204,22 @@ export default function ChatScreen() {
           }
           loadMessages(event.sessionId);
           return;
+        }
+        if (event && event.type === 'approval_requested') {
+          setPendingApproval({
+            requestId: event.requestId,
+            kind: event.kind,
+            summary: event.summary,
+            sessionId: event.sessionId
+          });
+          setAgentStatus('awaiting_approval');
+          return;
+        }
+        if (event && event.type === 'status_changed') {
+          setAgentStatus(event.status);
+          if (event.status !== 'awaiting_approval') {
+            setPendingApproval(null);
+          }
         }
         loadMessages();
       },
@@ -1410,8 +1429,39 @@ export default function ChatScreen() {
     }
   };
 
+  const handleApprove = async () => {
+    if (!profile || !pendingApproval) return;
+    const approval = pendingApproval;
+    setPendingApproval(null);
+    setAgentStatus('generating');
+    try {
+      await sendApprove(profile, approval.requestId);
+      await loadMessages(currentSessionId || undefined);
+    } catch (err) {
+      setPendingApproval(approval);
+      setAgentStatus('awaiting_approval');
+      alert(err.message || 'Failed to approve');
+    }
+  };
+
+  const handleReject = async () => {
+    if (!profile || !pendingApproval) return;
+    const approval = pendingApproval;
+    setPendingApproval(null);
+    setAgentStatus('idle');
+    try {
+      await sendReject(profile, approval.requestId);
+      await loadMessages(currentSessionId || undefined);
+    } catch (err) {
+      setPendingApproval(approval);
+      setAgentStatus('awaiting_approval');
+      alert(err.message || 'Failed to reject');
+    }
+  };
+
   const isWorking = agentStatus === 'generating';
-  const canSend = !sending && (Boolean(inputText.trim()) || attachments.length > 0);
+  const isAwaitingApproval = agentStatus === 'awaiting_approval';
+  const canSend = !sending && !isAwaitingApproval && (Boolean(inputText.trim()) || attachments.length > 0);
 
   const renderItem = useCallback(
     ({ item }) => <ChatMessageBubble item={item} theme={theme} fontSize={chatTextSize} />,
@@ -1962,6 +2012,48 @@ export default function ChatScreen() {
                 })
               )}
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isAwaitingApproval && Boolean(pendingApproval)}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {}}
+      >
+        <View style={styles.approvalOverlay}>
+          <View style={[styles.approvalSheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.approvalHandle} />
+            <View style={styles.approvalBadgeRow}>
+              <View style={[styles.approvalKindBadge, { backgroundColor: `${theme.warning || '#f59e0b'}22`, borderColor: `${theme.warning || '#f59e0b'}55` }]}>
+                <Text style={[styles.approvalKindText, { color: theme.warning || '#f59e0b' }]}>
+                  {pendingApproval?.kind?.toUpperCase().replace(/_/g, ' ') || 'APPROVAL REQUIRED'}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.approvalTitle, { color: theme.text }]}>Agent Requesting Approval</Text>
+            <Text style={[styles.approvalSummary, { color: theme.muted }]}>
+              {pendingApproval?.summary || 'The agent is requesting your approval to continue.'}
+            </Text>
+            <View style={styles.approvalButtons}>
+              <TouchableOpacity
+                style={[styles.approvalRejectBtn, { borderColor: theme.border }]}
+                onPress={handleReject}
+                activeOpacity={0.75}
+              >
+                <Icon name="x" size={16} color={theme.danger || '#ef4444'} />
+                <Text style={[styles.approvalRejectText, { color: theme.danger || '#ef4444' }]}>Reject</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.approvalApproveBtn, { backgroundColor: theme.accent }]}
+                onPress={handleApprove}
+                activeOpacity={0.8}
+              >
+                <Icon name="check" size={16} color="#ffffff" />
+                <Text style={styles.approvalApproveText}>Approve</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2933,5 +3025,84 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontFamily: fontMedium
+  },
+  approvalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'flex-end'
+  },
+  approvalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 48
+  },
+  approvalHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.4)',
+    alignSelf: 'center',
+    marginBottom: 20
+  },
+  approvalBadgeRow: {
+    flexDirection: 'row',
+    marginBottom: 14
+  },
+  approvalKindBadge: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4
+  },
+  approvalKindText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1
+  },
+  approvalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 10
+  },
+  approvalSummary: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 32
+  },
+  approvalButtons: {
+    flexDirection: 'row',
+    gap: 12
+  },
+  approvalRejectBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1
+  },
+  approvalRejectText: {
+    fontSize: 15,
+    fontWeight: '600'
+  },
+  approvalApproveBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14
+  },
+  approvalApproveText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff'
   }
 });
