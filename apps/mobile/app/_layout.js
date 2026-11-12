@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -14,7 +14,6 @@ import SplashScreen from '../src/components/SplashScreen.js';
 
 function RootLayoutNav() {
   const { theme, isDark } = useTheme();
-  const [splashDone, setSplashDone] = useState(false);
 
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
@@ -40,7 +39,7 @@ function RootLayoutNav() {
   }, [theme.bg]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <>
       <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={theme.bg} />
       <Stack
         screenOptions={{
@@ -61,15 +60,17 @@ function RootLayoutNav() {
           }}
         />
       </Stack>
-      {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
-    </View>
+    </>
   );
 }
 
 export default function RootLayout() {
+  const [splashDone, setSplashDone] = useState(false);
+
   return (
     <ThemeProvider>
       <RootLayoutNav />
+      {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
     </ThemeProvider>
   );
 }

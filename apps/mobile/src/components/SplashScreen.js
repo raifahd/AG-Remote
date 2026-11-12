@@ -6,7 +6,8 @@ import {
   Animated,
   Easing,
   Dimensions,
-  Platform
+  Platform,
+  Modal
 } from 'react-native';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -244,44 +245,46 @@ export default function SplashScreen({ onFinished }) {
   const CY = SCREEN_H * 0.42;
 
   return (
-    <Animated.View style={[styles.container, { opacity: masterOpacity }]}>
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {gridLines}
-      </View>
-
-      <Orb delay={200} size={280} x={CX - 80} y={CY - 60} color={`${ACCENT}30`} duration={3400} />
-      <Orb delay={350} size={200} x={CX + 90} y={CY + 50} color={`${ACCENT2}28`} duration={2900} />
-      <Orb delay={500} size={150} x={CX - 100} y={CY + 80} color={`${ACCENT3}22`} duration={3200} />
-
-      <View style={[styles.logoCenter, { top: CY - 80 }]}>
-        <Animated.View style={[styles.ringOuter3, { transform: [{ scale: ringScale3 }], opacity: ringOpacity3 }]} />
-        <Animated.View style={[styles.ringOuter2, { transform: [{ scale: ringScale2 }], opacity: ringOpacity2 }]} />
-        <Animated.View style={[styles.ringOuter1, { transform: [{ scale: ringScale1 }], opacity: ringOpacity1 }]} />
-
-        <Animated.View style={{ opacity: scanLineOpacity, overflow: 'hidden', ...StyleSheet.absoluteFillObject, borderRadius: 60 }}>
-          <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineY }] }]} />
-        </Animated.View>
-
-        <Animated.View style={[styles.logoBox, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
-          <View style={styles.logoInner}>
-            <Text style={styles.logoLetterA}>AG</Text>
-          </View>
-        </Animated.View>
-
-        <Animated.View style={[styles.taglineWrap, { opacity: taglineOpacity, transform: [{ translateY: taglineY }] }]}>
-          <Text style={styles.appName}>AG Remote</Text>
-          <Text style={styles.tagline}>Your AI, Anywhere</Text>
-        </Animated.View>
-      </View>
-
-      <View style={styles.bottomBadge}>
-        <View style={styles.dotRow}>
-          {[ACCENT, ACCENT2, ACCENT3].map((c, i) => (
-            <View key={i} style={[styles.dot, { backgroundColor: c }]} />
-          ))}
+    <Modal visible transparent animationType="none" statusBarTranslucent onRequestClose={() => {}}>
+      <Animated.View style={[styles.container, { opacity: masterOpacity }]}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          {gridLines}
         </View>
-      </View>
-    </Animated.View>
+
+        <Orb delay={200} size={280} x={CX - 80} y={CY - 60} color={`${ACCENT}30`} duration={3400} />
+        <Orb delay={350} size={200} x={CX + 90} y={CY + 50} color={`${ACCENT2}28`} duration={2900} />
+        <Orb delay={500} size={150} x={CX - 100} y={CY + 80} color={`${ACCENT3}22`} duration={3200} />
+
+        <View style={[styles.logoCenter, { top: CY - 80 }]}>
+          <Animated.View style={[styles.ringOuter3, { transform: [{ scale: ringScale3 }], opacity: ringOpacity3 }]} />
+          <Animated.View style={[styles.ringOuter2, { transform: [{ scale: ringScale2 }], opacity: ringOpacity2 }]} />
+          <Animated.View style={[styles.ringOuter1, { transform: [{ scale: ringScale1 }], opacity: ringOpacity1 }]} />
+
+          <Animated.View style={{ opacity: scanLineOpacity, overflow: 'hidden', ...StyleSheet.absoluteFillObject, borderRadius: 60 }}>
+            <Animated.View style={[styles.scanLine, { transform: [{ translateY: scanLineY }] }]} />
+          </Animated.View>
+
+          <Animated.View style={[styles.logoBox, { opacity: logoOpacity, transform: [{ scale: logoScale }] }]}>
+            <View style={styles.logoInner}>
+              <Text style={styles.logoLetterA}>AG</Text>
+            </View>
+          </Animated.View>
+
+          <Animated.View style={[styles.taglineWrap, { opacity: taglineOpacity, transform: [{ translateY: taglineY }] }]}>
+            <Text style={styles.appName}>AG Remote</Text>
+            <Text style={styles.tagline}>Your AI, Anywhere</Text>
+          </Animated.View>
+        </View>
+
+        <View style={styles.bottomBadge}>
+          <View style={styles.dotRow}>
+            {[ACCENT, ACCENT2, ACCENT3].map((c, i) => (
+              <View key={i} style={[styles.dot, { backgroundColor: c }]} />
+            ))}
+          </View>
+        </View>
+      </Animated.View>
+    </Modal>
   );
 }
 
@@ -289,7 +292,6 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: DARK_BG,
-    zIndex: 9999,
     alignItems: 'center',
     justifyContent: 'center'
   },
@@ -415,3 +417,4 @@ const styles = StyleSheet.create({
     opacity: 0.7
   }
 });
+
