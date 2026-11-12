@@ -63,8 +63,11 @@ export async function fetchSessions(profile) {
   return parsed.data;
 }
 
-export async function createSession(profile, text) {
-  return authenticatedRequest(profile, '/v1/sessions', 'POST', { text });
+export async function createSession(profile, text, modelId) {
+  const body = {};
+  if (text !== undefined) body.text = text;
+  if (modelId) body.modelId = modelId;
+  return authenticatedRequest(profile, '/v1/sessions', 'POST', body);
 }
 
 export async function focusSession(profile, sessionId) {
@@ -84,11 +87,22 @@ export async function fetchMessages(profile, limit = 50, sessionId) {
   return parsed.data;
 }
 
-export async function sendPrompt(profile, text, sessionId) {
+export async function sendPrompt(profile, text, sessionId, modelId) {
+  const body = { text };
+  if (modelId) body.modelId = modelId;
   if (sessionId) {
-    return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/prompt`, 'POST', { text });
+    return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/prompt`, 'POST', body);
   }
-  return authenticatedRequest(profile, '/v1/prompt', 'POST', { text });
+  return authenticatedRequest(profile, '/v1/prompt', 'POST', body);
+}
+
+export async function fetchModels(profile, sessionId) {
+  const path = sessionId ? `/v1/models?sessionId=${encodeURIComponent(sessionId)}` : '/v1/models';
+  return authenticatedRequest(profile, path, 'GET');
+}
+
+export async function selectModel(profile, modelId, sessionId) {
+  return authenticatedRequest(profile, '/v1/models/select', 'POST', { modelId, sessionId });
 }
 
 export async function sendApprove(profile, requestId) {
@@ -152,7 +166,7 @@ export async function uploadFile(profile, asset) {
   return parsed.data;
 }
 
-async function authenticatedRequest(profile, pathname, method, body = null) {
+async function authenticatedRequest(profile, pathname, method, body = null, timeoutMs = 15000) {
   if (!profile || !profile.baseUrl || !profile.token) {
     throw new Error('Profile missing or incomplete');
   }
@@ -164,23 +178,36 @@ async function authenticatedRequest(profile, pathname, method, body = null) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res.ok) {
-    let errMessage = `HTTP ${res.status}`;
-    try {
-      const errJson = await res.json();
-      if (errJson && errJson.message) {
-        errMessage = errJson.message;
-      }
-    } catch {}
-    throw new Error(errMessage);
+  try {
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+
+    if (!res.ok) {
+      let errMessage = `HTTP ${res.status}`;
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.message) {
+          errMessage = errJson.message;
+        }
+      } catch {}
+      throw new Error(errMessage);
+    }
+
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your network connection.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-
-  return res.json();
 }
 

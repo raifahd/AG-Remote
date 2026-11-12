@@ -30,9 +30,26 @@ import {
   createSession,
   sendPrompt,
   sendStop,
-  uploadFile
+  uploadFile,
+  fetchModels,
+  selectModel
 } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
+
+function formatResetTime(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  const diffMs = d.getTime() - now.getTime();
+  if (diffMs <= 0) return 'Resetting soon';
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 0) {
+    return `Resets in ${hours}h ${mins}m`;
+  }
+  return `Resets in ${mins}m`;
+}
 
 function formatSessionTime(timestamp) {
   if (!timestamp) return '';
@@ -1000,6 +1017,9 @@ export default function ChatScreen() {
   const [newSessionModalVisible, setNewSessionModalVisible] = useState(false);
   const [newSessionText, setNewSessionText] = useState('');
   const [creatingSession, setCreatingSession] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [modelsModalVisible, setModelsModalVisible] = useState(false);
 
   const flatListRef = useRef(null);
   const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
@@ -1110,9 +1130,21 @@ export default function ChatScreen() {
           }
         }
 
-        const list = await fetchMessages(active, 50, resolvedSid || undefined).catch(() => []);
+        const [list, modelData] = await Promise.all([
+          fetchMessages(active, 50, resolvedSid || undefined).catch(() => []),
+          fetchModels(active, resolvedSid || undefined).catch(() => null)
+        ]);
         if (list) setMessages(list);
         if (st?.status) setAgentStatus(st.status);
+        if (modelData?.models) {
+          setAvailableModels(modelData.models);
+          const cur = modelData.models.find((m) => m.isCurrent) ||
+            modelData.models.find((m) => m.id === modelData.currentModelId) ||
+            modelData.models[0];
+          if (cur) {
+            setSelectedModel(cur);
+          }
+        }
       }
     } catch {}
   }, [currentSessionId]);
@@ -1163,11 +1195,20 @@ export default function ChatScreen() {
     setTimeout(scrollToBottom, 60);
   };
 
+  const handleSelectModel = async (modelItem) => {
+    setSelectedModel(modelItem);
+    setModelsModalVisible(false);
+    if (!profile) return;
+    try {
+      await selectModel(profile, modelItem.id, currentSessionId || undefined);
+    } catch {}
+  };
+
   const handleCreateSession = async () => {
     if (!profile) return;
     setCreatingSession(true);
     try {
-      const res = await createSession(profile, newSessionText.trim() || undefined);
+      const res = await createSession(profile, newSessionText.trim() || undefined, selectedModel?.id || undefined);
       setNewSessionModalVisible(false);
       setNewSessionText('');
       if (res?.sessionId) {
@@ -1253,14 +1294,25 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, optimisticMsg]);
       setTimeout(scrollToBottom, 60);
 
-      await sendPrompt(profile, messageText, currentSessionId || undefined);
-      await loadMessages(currentSessionId || undefined);
+      await sendPrompt(profile, messageText, currentSessionId || undefined, selectedModel?.id || undefined);
+      setSending(false);
+      setSendingStatus('');
+
+      fetchMessages(profile, 50, currentSessionId || undefined).then((list) => {
+        if (list && list.length > 0) setMessages(list);
+      }).catch(() => {});
+      fetchModels(profile, currentSessionId || undefined).then((mRes) => {
+        if (mRes?.models) {
+          setAvailableModels(mRes.models);
+          const cur = mRes.models.find((m) => m.isCurrent) || mRes.models.find((m) => m.id === mRes.currentModelId);
+          if (cur) setSelectedModel(cur);
+        }
+      }).catch(() => {});
       setTimeout(scrollToBottom, 150);
     } catch (err) {
       alert(err.message || 'Failed to send message');
       setAttachments(pendingAttachments);
       setInputText(trimmed);
-    } finally {
       setSending(false);
       setSendingStatus('');
     }
@@ -1444,13 +1496,56 @@ export default function ChatScreen() {
           </View>
         )}
 
+        <View style={styles.composerHeaderRow}>
+          <TouchableOpacity
+            style={[
+              styles.modelPill,
+              {
+                backgroundColor: isDark ? 'rgba(28, 28, 34, 0.95)' : 'rgba(242, 242, 247, 0.96)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)'
+              }
+            ]}
+            onPress={() => setModelsModalVisible(true)}
+            activeOpacity={0.75}
+          >
+            <Icon name="sparkles" size={13} color={theme.accent} />
+            <Text style={[styles.modelPillText, { color: theme.text }]} numberOfLines={1}>
+              {selectedModel?.label || 'Select Model'}
+            </Text>
+            {selectedModel?.remainingFraction !== undefined && (
+              <View
+                style={[
+                  styles.quotaBadge,
+                  {
+                    backgroundColor:
+                      selectedModel.remainingFraction > 0.2 ? `${theme.success}22` : `${theme.danger}22`
+                  }
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.quotaBadgeText,
+                    {
+                      color:
+                        selectedModel.remainingFraction > 0.2 ? theme.success : theme.danger
+                    }
+                  ]}
+                >
+                  {Math.round(selectedModel.remainingFraction * 100)}%
+                </Text>
+              </View>
+            )}
+            <Icon name="chevron" size={11} color={theme.muted} />
+          </TouchableOpacity>
+        </View>
+
         <View
           style={[
             styles.composer,
             {
-              backgroundColor: isDark ? 'rgba(22, 22, 26, 0.78)' : 'rgba(255, 255, 255, 0.82)',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)',
-              borderTopColor: isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.95)'
+              backgroundColor: isDark ? '#1a1a1f' : '#ffffff',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.10)',
+              borderTopColor: isDark ? 'rgba(255, 255, 255, 0.30)' : 'rgba(255, 255, 255, 0.95)'
             }
           ]}
         >
@@ -1633,6 +1728,26 @@ export default function ChatScreen() {
               />
             </View>
 
+            <View style={{ marginBottom: 16 }}>
+              <Text style={[styles.inputLabel, { color: theme.muted }]}>AGENT MODEL</Text>
+              <TouchableOpacity
+                style={[
+                  styles.newSessionModelPicker,
+                  { backgroundColor: theme.raised, borderColor: theme.border }
+                ]}
+                onPress={() => {
+                  setNewSessionModalVisible(false);
+                  setModelsModalVisible(true);
+                }}
+              >
+                <Icon name="sparkles" size={14} color={theme.accent} />
+                <Text style={[styles.newSessionModelText, { color: theme.text }]}>
+                  {selectedModel?.label || 'Select Model'}
+                </Text>
+                <Icon name="chevron" size={12} color={theme.muted} />
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { borderColor: theme.border }]}
@@ -1652,6 +1767,116 @@ export default function ChatScreen() {
                 )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={modelsModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModelsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface, borderColor: theme.border, maxHeight: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>Agent Model & Quotas</Text>
+                <Text style={[styles.modalSub, { color: theme.muted }]}>
+                  Select model and monitor real-time quota
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setModelsModalVisible(false)}>
+                <Icon name="x" size={20} color={theme.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ maxHeight: 380 }} contentContainerStyle={{ paddingVertical: 4, gap: 10 }}>
+              {availableModels.length === 0 ? (
+                <View style={{ paddingVertical: 20, alignItems: 'center' }}>
+                  <Text style={{ color: theme.muted, fontSize: 12 }}>No models reported</Text>
+                </View>
+              ) : (
+                availableModels.map((m) => {
+                  const isSelected = selectedModel?.id === m.id || (m.isCurrent && !selectedModel);
+                  const quotaPct = m.remainingFraction !== undefined ? Math.round(m.remainingFraction * 100) : null;
+                  const resetText = formatResetTime(m.resetTime);
+                  const isDisabled = m.id.includes('disabled');
+
+                  return (
+                    <TouchableOpacity
+                      key={m.id}
+                      disabled={isDisabled}
+                      style={[
+                        styles.modelCard,
+                        {
+                          backgroundColor: isSelected ? `${theme.accent}14` : theme.raised,
+                          borderColor: isSelected ? theme.accent : theme.border,
+                          opacity: isDisabled ? 0.45 : 1
+                        }
+                      ]}
+                      onPress={() => handleSelectModel(m)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.modelCardTop}>
+                        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Icon
+                            name={m.id.includes('claude') ? 'sparkles' : 'terminal'}
+                            size={16}
+                            color={isSelected ? theme.accent : theme.muted}
+                          />
+                          <Text
+                            style={[
+                              styles.modelCardName,
+                              { color: isSelected ? theme.accent : theme.text }
+                            ]}
+                          >
+                            {m.label}
+                          </Text>
+                        </View>
+                        {isSelected && (
+                          <View style={[styles.selectedCheckBadge, { backgroundColor: theme.accent }]}>
+                            <Icon name="check" size={12} color="#ffffff" />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.modelQuotaRow}>
+                        {quotaPct !== null ? (
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <View style={styles.quotaBarTrack}>
+                              <View
+                                style={[
+                                  styles.quotaBarFill,
+                                  {
+                                    width: `${Math.min(100, Math.max(0, quotaPct))}%`,
+                                    backgroundColor: quotaPct > 20 ? theme.success : theme.danger
+                                  }
+                                ]}
+                              />
+                            </View>
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                              <Text style={[styles.quotaText, { color: quotaPct > 20 ? theme.success : theme.danger }]}>
+                                {quotaPct}% quota remaining
+                              </Text>
+                              {Boolean(resetText) && (
+                                <Text style={[styles.resetText, { color: theme.muted }]}>
+                                  {resetText}
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        ) : (
+                          <Text style={[styles.quotaText, { color: theme.muted }]}>
+                            {isDisabled ? 'Currently unavailable' : 'Standard quota'}
+                          </Text>
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -2476,5 +2701,97 @@ const styles = StyleSheet.create({
   },
   sessionRowTime: {
     fontSize: 11
+  },
+  composerHeaderRow: {
+    width: '100%',
+    maxWidth: 440,
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 12,
+    marginBottom: 6
+  },
+  modelPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9999,
+    borderWidth: 1
+  },
+  modelPillText: {
+    fontSize: 11,
+    fontFamily: fontSemiBold
+  },
+  quotaBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+    borderRadius: 6
+  },
+  quotaBadgeText: {
+    fontSize: 9,
+    fontFamily: fontBold
+  },
+  modalSub: {
+    fontSize: 11,
+    fontFamily: fontRegular,
+    marginTop: 2
+  },
+  modelCard: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8
+  },
+  modelCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  modelCardName: {
+    fontSize: 13,
+    fontFamily: fontSemiBold
+  },
+  selectedCheckBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  modelQuotaRow: {
+    width: '100%'
+  },
+  quotaBarTrack: {
+    width: '100%',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(150, 150, 150, 0.2)',
+    overflow: 'hidden'
+  },
+  quotaBarFill: {
+    height: '100%',
+    borderRadius: 2
+  },
+  quotaText: {
+    fontSize: 10,
+    fontFamily: fontSemiBold
+  },
+  resetText: {
+    fontSize: 10,
+    fontFamily: fontRegular
+  },
+  newSessionModelPicker: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1
+  },
+  newSessionModelText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: fontMedium
   }
 });

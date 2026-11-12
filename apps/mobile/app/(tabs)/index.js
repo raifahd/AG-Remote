@@ -156,7 +156,7 @@ export default function HomeScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
-      <TopBar onBellPress={() => router.navigate('/(tabs)/settings')} />
+      <TopBar />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
