@@ -356,8 +356,13 @@ export class SdkAdapter implements AgentAdapter {
         this.stateMachine.setSessionTitle(id, title);
 
         const isRunning = item.status === 'CASCADE_RUN_STATUS_RUNNING';
+        const prevStepCount = this.lastStepCounts.get(id) ?? 0;
         const currentStepCount = item.stepCount ?? 0;
         this.lastStepCounts.set(id, currentStepCount);
+
+        if (currentStepCount > prevStepCount && prevStepCount > 0) {
+          this.stateMachine.onMessageAppended(id, 'user', '');
+        }
 
         if (isRunning) {
           if (this.stoppedSessions.has(id)) {
