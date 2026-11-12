@@ -1,6 +1,8 @@
 import http from 'http';
 import https from 'https';
 import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import {
   AgentState,
   ChatMessage,
@@ -18,6 +20,7 @@ export interface SdkAdapterConfig {
   useTls?: boolean | undefined;
   pollIntervalMs?: number | undefined;
   executeCommand?: ((command: string, ...args: unknown[]) => Promise<unknown>) | undefined;
+  brainDir?: string | null | undefined;
 }
 
 interface RawTrajectorySummary {
@@ -85,6 +88,118 @@ function detectAgyHub(): { port: number; token: string } | null {
   return null;
 }
 
+function discoverBrainSessions(brainDir: string | null, existingIds: Set<string>): SessionSummary[] {
+  const result: SessionSummary[] = [];
+  try {
+    if (!brainDir || !fs.existsSync(brainDir)) {
+      return result;
+    }
+    const entries = fs.readdirSync(brainDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name === 'tempmediaStorage') {
+        continue;
+      }
+      const id = entry.name;
+      if (existingIds.has(id)) {
+        continue;
+      }
+
+      const transcriptPath = path.join(brainDir, id, '.system_generated', 'logs', 'transcript.jsonl');
+      let title = 'Conversation';
+      let lastActivityAt = 0;
+      let stepCount = 0;
+
+      if (fs.existsSync(transcriptPath)) {
+        try {
+          const stat = fs.statSync(transcriptPath);
+          lastActivityAt = Math.round(stat.mtimeMs);
+          const content = fs.readFileSync(transcriptPath, 'utf8');
+          const lines = content.split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            stepCount++;
+            if (title === 'Conversation') {
+              try {
+                const step = JSON.parse(line);
+                if (step.type === 'USER_INPUT' && step.content) {
+                  const reqMatch = typeof step.content === 'string'
+                    ? step.content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/)
+                    : null;
+                  const raw = reqMatch ? reqMatch[1] : (typeof step.content === 'string' ? step.content : '');
+                  const firstLine = raw.trim().split('\n')[0]?.replace(/^[#*`\s-]+/, '').trim();
+                  if (firstLine) {
+                    title = firstLine.slice(0, 60);
+                  }
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      } else {
+        try {
+          const dirStat = fs.statSync(path.join(brainDir, id));
+          lastActivityAt = Math.round(dirStat.mtimeMs);
+        } catch {}
+      }
+
+      result.push({
+        id,
+        title,
+        stepCount,
+        lastActivityAt: lastActivityAt || undefined,
+        status: 'idle',
+        lastModified: lastActivityAt || undefined
+      });
+    }
+  } catch {}
+  return result;
+}
+
+function readTranscriptMessages(brainDir: string | null, cascadeId: string, limit: number): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  try {
+    if (!brainDir) {
+      return messages;
+    }
+    const transcriptPath = path.join(brainDir, cascadeId, '.system_generated', 'logs', 'transcript.jsonl');
+    if (!fs.existsSync(transcriptPath)) {
+      return messages;
+    }
+    const content = fs.readFileSync(transcriptPath, 'utf8');
+    const lines = content.split('\n');
+    let idx = 0;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const step = JSON.parse(line);
+        const timestamp = step.created_at ? new Date(step.created_at).getTime() : Date.now();
+        if (step.type === 'USER_INPUT' && step.content) {
+          const reqMatch = typeof step.content === 'string'
+            ? step.content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/)
+            : null;
+          const userText = reqMatch ? reqMatch[1].trim() : (typeof step.content === 'string' ? step.content : '');
+          if (userText) {
+            messages.push({
+              id: `user-${cascadeId}-${idx++}`,
+              role: 'user',
+              text: userText,
+              timestamp
+            });
+          }
+        } else if (step.type === 'PLANNER_RESPONSE' && step.content) {
+          messages.push({
+            id: `agent-${cascadeId}-${idx++}`,
+            role: 'agent',
+            text: typeof step.content === 'string' ? step.content : JSON.stringify(step.content),
+            timestamp
+          });
+        }
+      } catch {}
+    }
+  } catch {}
+  return messages.slice(-limit);
+}
+
 export class SdkAdapter implements AgentAdapter {
   private lsPort: number;
   private csrfToken: string;
@@ -96,6 +211,7 @@ export class SdkAdapter implements AgentAdapter {
   private activeSessionId: string | null = null;
   private lastStepCounts = new Map<string, number>();
   private readonly stoppedSessions = new Set<string>();
+  private brainDir: string | null;
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -105,6 +221,16 @@ export class SdkAdapter implements AgentAdapter {
     this.useTls = config.useTls ?? false;
     this.pollIntervalMs = config.pollIntervalMs ?? 1000;
     this.executeCommand = config.executeCommand;
+
+    if (config.brainDir !== undefined) {
+      this.brainDir = config.brainDir;
+    } else if (process.env.ANTIGRAVITY_BRAIN_DIR) {
+      this.brainDir = process.env.ANTIGRAVITY_BRAIN_DIR;
+    } else if (process.env.NODE_ENV === 'test') {
+      this.brainDir = null;
+    } else {
+      this.brainDir = path.join(os.homedir(), '.gemini', 'antigravity', 'brain');
+    }
 
     if (process.env.ANTIGRAVITY_CONVERSATION_ID) {
       this.activeSessionId = process.env.ANTIGRAVITY_CONVERSATION_ID;
@@ -264,11 +390,13 @@ export class SdkAdapter implements AgentAdapter {
 
   async listSessions(): Promise<SessionSummary[]> {
     const sessions: SessionSummary[] = [];
+    const seenIds = new Set<string>();
 
     try {
       const resp = await this.callRpc<GetAllTrajectoriesResponse>('GetAllCascadeTrajectories', {});
       const summaries = resp?.trajectorySummaries ?? {};
       for (const id of Object.keys(summaries)) {
+        seenIds.add(id);
         const item = summaries[id];
         const title = item?.summary ?? 'Untitled';
         const lastActivityAt = item?.lastModifiedTime ? new Date(item.lastModifiedTime).getTime() : undefined;
@@ -287,12 +415,22 @@ export class SdkAdapter implements AgentAdapter {
       }
     } catch {
       if (this.activeSessionId) {
+        seenIds.add(this.activeSessionId);
         sessions.push({
           id: this.activeSessionId,
           title: 'Active Session'
         });
       }
     }
+
+    const brainSessions = discoverBrainSessions(this.brainDir, seenIds);
+    sessions.push(...brainSessions);
+
+    sessions.sort((a, b) => {
+      const timeA = a.lastActivityAt || a.lastModified || 0;
+      const timeB = b.lastActivityAt || b.lastModified || 0;
+      return timeB - timeA;
+    });
 
     return sessions;
   }
@@ -356,9 +494,14 @@ export class SdkAdapter implements AgentAdapter {
         }
       }
 
+      if (messages.length === 0) {
+        const diskMsgs = readTranscriptMessages(this.brainDir, cascadeId, limit);
+        if (diskMsgs.length > 0) return diskMsgs;
+      }
+
       return messages.slice(-limit);
     } catch {
-      return [];
+      return readTranscriptMessages(this.brainDir, cascadeId, limit);
     }
   }
 

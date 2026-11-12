@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Platform, Keyboard } from 'react-native';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Platform, Keyboard, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, usePathname } from 'expo-router';
 import { useTheme } from '../theme.js';
@@ -18,6 +18,34 @@ export default function TabBar(props) {
   const router = useRouter();
   const pathname = usePathname() || '/';
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [tabWidth, setTabWidth] = useState(0);
+
+  const getIsFocused = (tabName) => {
+    if (props.state?.index !== undefined && props.state.routes?.[props.state.index]) {
+      return props.state.routes[props.state.index].name === tabName;
+    }
+    if (tabName === 'index') {
+      return pathname === '/' || pathname === '/(tabs)' || pathname === '/index';
+    }
+    return pathname.includes(tabName);
+  };
+
+  const activeIndex = useMemo(() => {
+    const idx = TABS.findIndex((tab) => getIsFocused(tab.name));
+    return idx >= 0 ? idx : 0;
+  }, [props.state?.index, pathname]);
+
+  const slideAnim = useRef(new Animated.Value(activeIndex)).current;
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: activeIndex,
+      damping: 24,
+      stiffness: 240,
+      mass: 0.7,
+      useNativeDriver: true
+    }).start();
+  }, [activeIndex]);
 
   useEffect(() => {
     const showSub1 = Keyboard.addListener('keyboardWillShow', () => setKeyboardVisible(true));
@@ -38,15 +66,19 @@ export default function TabBar(props) {
 
   const bottomMargin = Math.max(insets.bottom, 14);
 
-  const getIsFocused = (tabName) => {
-    if (props.state?.index !== undefined && props.state.routes?.[props.state.index]) {
-      return props.state.routes[props.state.index].name === tabName;
+  const onLayout = (e) => {
+    const totalW = e.nativeEvent.layout.width;
+    if (totalW > 0) {
+      const computedTabWidth = (totalW - 8) / TABS.length;
+      if (Math.abs(computedTabWidth - tabWidth) > 0.5) {
+        setTabWidth(computedTabWidth);
+      }
     }
-    if (tabName === 'index') {
-      return pathname === '/' || pathname === '/(tabs)' || pathname === '/index';
-    }
-    return pathname.includes(tabName);
   };
+
+  const glassBg = isDark ? 'rgba(20, 20, 24, 0.74)' : 'rgba(255, 255, 255, 0.78)';
+  const glassBorder = isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)';
+  const glassTopHighlight = isDark ? 'rgba(255, 255, 255, 0.26)' : 'rgba(255, 255, 255, 0.95)';
 
   return (
     <View
@@ -59,16 +91,38 @@ export default function TabBar(props) {
       ]}
     >
       <View
+        onLayout={onLayout}
         style={[
           styles.tabbar,
           {
-            backgroundColor: theme.raised,
-            borderColor: theme.border
+            backgroundColor: glassBg,
+            borderColor: glassBorder,
+            borderTopColor: glassTopHighlight
           }
         ]}
       >
-        {TABS.map((tab) => {
-          const isFocused = getIsFocused(tab.name);
+        {tabWidth > 0 && (
+          <Animated.View
+            style={[
+              styles.slidingPill,
+              {
+                width: tabWidth,
+                backgroundColor: isDark ? `${theme.accent}2E` : `${theme.accent}1C`,
+                borderColor: isDark ? `${theme.accent}4D` : `${theme.accent}2E`,
+                transform: [
+                  {
+                    translateX: slideAnim.interpolate({
+                      inputRange: [0, 1, 2, 3],
+                      outputRange: [0, tabWidth, tabWidth * 2, tabWidth * 3]
+                    })
+                  }
+                ]
+              }
+            ]}
+          />
+        )}
+        {TABS.map((tab, idx) => {
+          const isFocused = idx === activeIndex;
 
           const onPress = () => {
             if (isFocused) return;
@@ -79,7 +133,6 @@ export default function TabBar(props) {
             }
           };
 
-          const activeBg = `${theme.accent}2E`;
           const activeColor = theme.accent;
           const inactiveColor = theme.muted;
 
@@ -87,11 +140,8 @@ export default function TabBar(props) {
             <TouchableOpacity
               key={tab.name}
               onPress={onPress}
-              style={[
-                styles.tabButton,
-                isFocused && { backgroundColor: activeBg }
-              ]}
-              activeOpacity={0.8}
+              style={styles.tabButton}
+              activeOpacity={0.7}
             >
               <View style={styles.iconContainer}>
                 <Icon name={tab.icon} size={20} color={isFocused ? activeColor : inactiveColor} />
@@ -134,13 +184,40 @@ const styles = StyleSheet.create({
   tabbar: {
     width: '94%',
     maxWidth: 452,
-    paddingVertical: 5,
+    height: 58,
+    paddingVertical: 4,
     paddingHorizontal: 4,
     borderWidth: 1,
     borderRadius: 9999,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.35,
+        shadowRadius: 20
+      },
+      android: {
+        elevation: 14
+      },
+      web: {
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.22)',
+        backdropFilter: 'blur(24px) saturate(190%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(190%)'
+      }
+    })
+  },
+  slidingPill: {
+    position: 'absolute',
+    top: 4,
+    bottom: 4,
+    left: 4,
+    borderRadius: 9999,
+    borderWidth: 1,
+    zIndex: 1
   },
   tabButton: {
     height: 50,
@@ -148,7 +225,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     borderRadius: 9999,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    zIndex: 2,
+    backgroundColor: 'transparent'
   },
   iconContainer: {
     height: 20,

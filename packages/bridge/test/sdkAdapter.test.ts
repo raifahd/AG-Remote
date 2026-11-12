@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { SdkAdapter } from '../src/adapters/SdkAdapter.js';
 import { AgentStateMachine } from '../src/stateMachine.js';
 
@@ -78,6 +81,33 @@ describe('SdkAdapter', () => {
     await adapter.stop();
     expect(receivedRpc.some((r) => r.method === 'CancelCascadeInvocation')).toBe(true);
     expect(stateMachine.getStatus()).toBe('idle');
+  });
+
+  it('discovers additional sessions from brain directory', async () => {
+    const tempBrain = path.join(os.tmpdir(), `test-brain-${Date.now()}`);
+    const convId = 'conv-test-brain-123';
+    const logDir = path.join(tempBrain, convId, '.system_generated', 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(logDir, 'transcript.jsonl'),
+      JSON.stringify({
+        step_index: 0,
+        type: 'USER_INPUT',
+        content: '<USER_REQUEST>\nRefactor authentication flow\n</USER_REQUEST>'
+      }) + '\n'
+    );
+
+    const customAdapter = new SdkAdapter(new AgentStateMachine(), {
+      lsPort: mockLsPort,
+      csrfToken: 'test-csrf-token',
+      pollIntervalMs: 50,
+      brainDir: tempBrain
+    });
+
+    const sessions = await customAdapter.listSessions();
+    expect(sessions.some((s) => s.id === convId && s.title.includes('Refactor authentication flow'))).toBe(true);
+
+    fs.rmSync(tempBrain, { recursive: true, force: true });
   });
 });
 
