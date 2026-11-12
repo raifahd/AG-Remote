@@ -1333,6 +1333,9 @@ export default function ChatScreen() {
           scrollEventThrottle={16}
           contentContainerStyle={[
             styles.listContent,
+            messages.length > 0
+              ? { paddingTop: defaultBottomMargin + 76 }
+              : { paddingBottom: defaultBottomMargin + 76 },
             messages.length === 0 && styles.listContentEmpty
           ]}
           keyboardShouldPersistTaps="handled"
@@ -1360,9 +1363,9 @@ export default function ChatScreen() {
             style={[
               styles.scrollBottomButton,
               {
-                backgroundColor: theme.raised,
-                borderColor: theme.border,
-                bottom: 14
+                backgroundColor: isDark ? 'rgba(28, 28, 32, 0.85)' : 'rgba(255, 255, 255, 0.9)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+                bottom: defaultBottomMargin + 76
               }
             ]}
             onPress={scrollToBottom}
@@ -1373,12 +1376,23 @@ export default function ChatScreen() {
         )}
       </View>
 
+      <View
+        pointerEvents="none"
+        style={[
+          styles.bottomGlassBackdrop,
+          {
+            height: defaultBottomMargin + 85,
+            backgroundColor: isDark ? 'rgba(10, 10, 12, 0.68)' : 'rgba(250, 250, 252, 0.72)',
+            borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'
+          }
+        ]}
+      />
+
       <Animated.View
         style={[
           styles.composerContainer,
           {
-            backgroundColor: theme.bg,
-            marginBottom: composerBottomAnim
+            bottom: composerBottomAnim
           }
         ]}
       >
@@ -1387,8 +1401,8 @@ export default function ChatScreen() {
             style={[
               styles.sendingBar,
               {
-                backgroundColor: theme.surface,
-                borderColor: theme.border
+                backgroundColor: isDark ? 'rgba(24, 24, 28, 0.85)' : 'rgba(255, 255, 255, 0.88)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
               }
             ]}
           >
@@ -1412,8 +1426,8 @@ export default function ChatScreen() {
                   style={[
                     styles.attachmentChip,
                     {
-                      backgroundColor: theme.raised,
-                      borderColor: theme.border
+                      backgroundColor: isDark ? 'rgba(32, 32, 38, 0.82)' : 'rgba(240, 240, 245, 0.88)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)'
                     }
                   ]}
                 >
@@ -1446,8 +1460,9 @@ export default function ChatScreen() {
           style={[
             styles.composer,
             {
-              backgroundColor: theme.raised,
-              borderColor: theme.border
+              backgroundColor: isDark ? 'rgba(22, 22, 26, 0.78)' : 'rgba(255, 255, 255, 0.82)',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)',
+              borderTopColor: isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.95)'
             }
           ]}
         >
@@ -1941,17 +1956,50 @@ const styles = StyleSheet.create({
   scrollBottomButton: {
     position: 'absolute',
     right: 20,
-    width: 34,
-    height: 34,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 5
+    zIndex: 15,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8
+      },
+      android: {
+        elevation: 8
+      },
+      web: {
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)'
+      }
+    })
   },
   composerContainer: {
-    paddingHorizontal: 20,
-    alignItems: 'center'
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    zIndex: 10
+  },
+  bottomGlassBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderTopWidth: 1,
+    zIndex: 8,
+    ...Platform.select({
+      web: {
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)'
+      }
+    })
   },
   composer: {
     width: '100%',
@@ -1963,7 +2011,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 7,
-    gap: 6
+    gap: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.35,
+        shadowRadius: 20
+      },
+      android: {
+        elevation: 14
+      },
+      web: {
+        boxShadow: '0 10px 30px rgba(0, 0, 0, 0.22)',
+        backdropFilter: 'blur(24px) saturate(190%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(190%)'
+      }
+    })
   },
   attachButton: {
     width: 38,
