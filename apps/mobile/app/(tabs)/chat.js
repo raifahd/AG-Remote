@@ -1059,7 +1059,7 @@ export default function ChatScreen() {
   const [pendingApproval, setPendingApproval] = useState(null);
 
   const flatListRef = useRef(null);
-  const defaultBottomMargin = Math.max(insets.bottom, 8) + 66;
+  const defaultBottomMargin = Math.max(insets.bottom, 8) + 80;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
 
@@ -1078,7 +1078,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!isKeyboardOpenRef.current) {
-      composerBottomAnim.setValue(Math.max(insets.bottom, 8) + 66);
+      composerBottomAnim.setValue(Math.max(insets.bottom, 8) + 80);
     }
   }, [insets.bottom]);
 
@@ -1112,7 +1112,7 @@ export default function ChatScreen() {
     const onKeyboardHide = (e) => {
       isKeyboardOpenRef.current = false;
       setIsKeyboardOpen(false);
-      const targetBottom = Math.max(insets.bottom, 8) + 66;
+      const targetBottom = Math.max(insets.bottom, 8) + 80;
       const duration = Platform.OS === 'ios' ? (e?.duration || 250) : 200;
 
       Animated.timing(composerBottomAnim, {
