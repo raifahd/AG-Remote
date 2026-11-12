@@ -12,6 +12,7 @@ import {
   QuietHoursSettingsSchema,
   UploadPayloadSchema,
   CreateSessionRequestSchema,
+  SelectModelRequestSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -103,7 +104,7 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        const sessionId = await this.adapter.createSession(parsed.data.text);
+        const sessionId = await this.adapter.createSession(parsed.data.text, parsed.data.modelId);
         res.json({ ok: true, sessionId });
       } catch (err) {
         next(err);
@@ -132,7 +133,7 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        await this.adapter.sendPrompt(parsed.data.text, sessionId);
+        await this.adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -171,7 +172,31 @@ export class BridgeServer {
           return;
         }
         const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-        await this.adapter.sendPrompt(parsed.data.text, sessionId);
+        await this.adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
+        res.json({ ok: true });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.get('/models', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
+        const models = await this.adapter.getModels(sessionId);
+        res.json(models);
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.post('/models/select', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const parsed = SelectModelRequestSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+          return;
+        }
+        await this.adapter.setModel(parsed.data.modelId, parsed.data.sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);

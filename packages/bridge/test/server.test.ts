@@ -194,5 +194,23 @@ describe('BridgeServer integration', () => {
 
     fs.unlinkSync(uploadRes.data.path);
   });
+
+  it('lists models and allows model selection at /v1/models', async () => {
+    const listRes = await request('GET', '/v1/models', validToken);
+    expect(listRes.status).toBe(200);
+    expect(Array.isArray(listRes.data.models)).toBe(true);
+    expect(listRes.data.models.length).toBeGreaterThan(0);
+    expect(listRes.data.currentModelId).toBeDefined();
+
+    const selectRes = await request('POST', '/v1/models/select', validToken, {
+      modelId: 'claude-sonnet-4-6'
+    });
+    expect(selectRes.status).toBe(200);
+    expect(selectRes.data.ok).toBe(true);
+
+    const recheckRes = await request('GET', '/v1/models', validToken);
+    expect(recheckRes.status).toBe(200);
+    expect(recheckRes.data.currentModelId).toBe('claude-sonnet-4-6');
+  });
 });
 

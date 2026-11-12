@@ -4,7 +4,8 @@ import {
   AgentEvent,
   PendingApproval,
   SessionSummary,
-  ApprovalKind
+  ApprovalKind,
+  ModelsResponse
 } from '@ag-remote/shared';
 import { AgentAdapter, Disposable } from './AgentAdapter.js';
 
@@ -86,7 +87,9 @@ export class FakeAdapter implements AgentAdapter {
     });
   }
 
-  async createSession(text?: string): Promise<string> {
+  private currentModelId: string = 'gemini-3.8-flash-high';
+
+  async createSession(text?: string, _modelId?: string): Promise<string> {
     const id = `fake-session-${Date.now()}`;
     const title = text ? (text.length > 25 ? `${text.slice(0, 25)}...` : text) : 'New Conversation';
     const newSession: SessionSummary = {
@@ -120,7 +123,10 @@ export class FakeAdapter implements AgentAdapter {
     return list.slice(-limit);
   }
 
-  async sendPrompt(text: string, sessionId?: string): Promise<void> {
+  async sendPrompt(text: string, sessionId?: string, modelId?: string): Promise<void> {
+    if (modelId) {
+      this.currentModelId = modelId;
+    }
     const sid = sessionId ?? this.activeSessionId ?? 'fake-session-1';
     const target = this.sessions.find((s) => s.id === sid);
     if (!target) {
@@ -161,6 +167,39 @@ export class FakeAdapter implements AgentAdapter {
       status: 'generating',
       at
     });
+  }
+
+  async getModels(_sessionId?: string): Promise<ModelsResponse> {
+    return {
+      models: [
+        {
+          id: 'gemini-3.8-flash-high',
+          label: 'Gemini 3.8 Flash (High)',
+          remainingFraction: 0.9,
+          resetTime: '2026-11-12T17:41:06Z',
+          isCurrent: this.currentModelId === 'gemini-3.8-flash-high'
+        },
+        {
+          id: 'gemini-3.8-flash-medium',
+          label: 'Gemini 3.8 Flash (Medium)',
+          remainingFraction: 0.9,
+          resetTime: '2026-11-12T17:41:06Z',
+          isCurrent: this.currentModelId === 'gemini-3.8-flash-medium'
+        },
+        {
+          id: 'claude-sonnet-4-6',
+          label: 'Claude Sonnet 4.6 (Thinking)',
+          remainingFraction: 1,
+          resetTime: '2026-11-12T19:08:55Z',
+          isCurrent: this.currentModelId === 'claude-sonnet-4-6'
+        }
+      ],
+      currentModelId: this.currentModelId
+    };
+  }
+
+  async setModel(modelId: string, _sessionId?: string): Promise<void> {
+    this.currentModelId = modelId;
   }
 
   async approve(requestId?: string): Promise<void> {

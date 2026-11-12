@@ -9,7 +9,9 @@ import {
   AgentEvent,
   SessionSummary,
   RunStatus,
-  PendingApproval
+  PendingApproval,
+  ModelsResponse,
+  ModelInfo
 } from '@ag-remote/shared';
 import { AgentAdapter, Disposable } from './AgentAdapter.js';
 import { AgentStateMachine } from '../stateMachine.js';
@@ -65,6 +67,27 @@ interface GetCascadeTrajectoryResponse {
 
 interface StartCascadeResponse {
   cascadeId?: string;
+}
+
+interface RawClientModelConfig {
+  label?: string;
+  modelId?: string;
+  modelOrAlias?: {
+    model?: string;
+    alias?: string;
+  };
+  quotaInfo?: {
+    remainingFraction?: number;
+    resetTime?: string;
+  };
+}
+
+interface GetUserStatusResponse {
+  userStatus?: {
+    cascadeModelConfigData?: {
+      clientModelConfigs?: RawClientModelConfig[];
+    };
+  };
 }
 
 function detectAgyHub(): { port: number; token: string } | null {
@@ -212,6 +235,9 @@ export class SdkAdapter implements AgentAdapter {
   private lastStepCounts = new Map<string, number>();
   private readonly stoppedSessions = new Set<string>();
   private brainDir: string | null;
+  private selectedModelBySession = new Map<string, string>();
+  private defaultSelectedModel: string | null = null;
+  private cachedModels: ModelInfo[] = [];
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -443,18 +469,32 @@ export class SdkAdapter implements AgentAdapter {
     this.stateMachine.setSessionId(id);
   }
 
-  async createSession(text?: string): Promise<string> {
-    const resp = await this.callRpc<StartCascadeResponse>('StartCascade', { source: 1 });
+  async createSession(text?: string, modelId?: string): Promise<string> {
+    const chosenModel = modelId ?? this.defaultSelectedModel;
+    const body: Record<string, unknown> = { source: 1 };
+    if (chosenModel) {
+      const matched = this.cachedModels.find((m) => m.id === chosenModel || m.model === chosenModel);
+      const modelEnum = matched?.model || chosenModel;
+      if (modelEnum.startsWith('MODEL_')) {
+        body.requestedModel = modelEnum;
+      }
+    }
+
+    const resp = await this.callRpc<StartCascadeResponse>('StartCascade', body);
     const cascadeId = resp?.cascadeId;
     if (!cascadeId) {
       throw new Error('StartCascade returned no cascadeId');
+    }
+
+    if (chosenModel) {
+      this.selectedModelBySession.set(cascadeId, chosenModel);
     }
 
     const title = text ? (text.length > 30 ? `${text.slice(0, 30)}...` : text) : 'New Session';
     this.stateMachine.onSessionCreated(cascadeId, title);
 
     if (text) {
-      await this.sendPrompt(text, cascadeId);
+      await this.sendPrompt(text, cascadeId, chosenModel ?? undefined);
     }
 
     return cascadeId;
@@ -505,7 +545,7 @@ export class SdkAdapter implements AgentAdapter {
     }
   }
 
-  async sendPrompt(text: string, sessionId?: string): Promise<void> {
+  async sendPrompt(text: string, sessionId?: string, modelId?: string): Promise<void> {
     if (!this.activeSessionId && !sessionId) {
       await this.pollOnce();
     }
@@ -519,15 +559,107 @@ export class SdkAdapter implements AgentAdapter {
       throw new Error('No active conversation to send prompt to');
     }
 
-    const payload = {
+    const chosenModel = modelId ?? (cascadeId ? this.selectedModelBySession.get(cascadeId) : undefined) ?? this.defaultSelectedModel;
+    if (modelId && cascadeId) {
+      this.selectedModelBySession.set(cascadeId, modelId);
+    }
+
+    const payload: Record<string, unknown> = {
       cascadeId,
       items: [{ text }]
     };
+
+    if (chosenModel) {
+      const matched = this.cachedModels.find((m) => m.id === chosenModel || m.model === chosenModel);
+      const modelEnum = matched?.model || chosenModel;
+      if (modelEnum.startsWith('MODEL_')) {
+        payload.cascadeConfig = {
+          plannerConfig: {
+            requestedModel: { model: modelEnum }
+          }
+        };
+      }
+    }
 
     this.stoppedSessions.delete(cascadeId);
     await this.callRpc('SendUserCascadeMessage', payload);
     this.stateMachine.onGenerating(cascadeId);
     this.stateMachine.onMessageAppended(cascadeId, 'user', text);
+  }
+
+  async getModels(sessionId?: string): Promise<ModelsResponse> {
+    const targetSessionId = sessionId ?? this.activeSessionId ?? undefined;
+    let currentModelId = targetSessionId ? this.selectedModelBySession.get(targetSessionId) : undefined;
+    if (!currentModelId && this.defaultSelectedModel) {
+      currentModelId = this.defaultSelectedModel;
+    }
+
+    try {
+      const resp = await this.callRpc<GetUserStatusResponse>('GetUserStatus', {});
+      const rawConfigs = resp?.userStatus?.cascadeModelConfigData?.clientModelConfigs ?? [];
+
+      if (!currentModelId && targetSessionId) {
+        try {
+          const traj = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId: targetSessionId });
+          const steps = traj?.trajectory?.steps ?? [];
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const step = steps[i];
+            const gen = (step?.metadata as { generatorModel?: string } | undefined)?.generatorModel;
+            if (gen) {
+              const matched = rawConfigs.find((c) => c.modelOrAlias?.model === gen);
+              if (matched) {
+                currentModelId = matched.modelId ?? matched.modelOrAlias?.model;
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+
+      const models: ModelInfo[] = rawConfigs.map((c) => {
+        const id = c.modelId || c.modelOrAlias?.model || 'unknown';
+        const label = c.label || id;
+        const model = c.modelOrAlias?.model;
+        const remainingFraction = c.quotaInfo?.remainingFraction;
+        const resetTime = c.quotaInfo?.resetTime;
+        const isCurrent = currentModelId ? (id === currentModelId || model === currentModelId) : false;
+
+        return {
+          id,
+          label,
+          model,
+          remainingFraction,
+          resetTime,
+          isCurrent
+        };
+      });
+
+      if (!currentModelId && models.length > 0) {
+        const firstActive = models.find((m) => m.remainingFraction !== undefined && m.remainingFraction > 0) || models[0];
+        if (firstActive) {
+          firstActive.isCurrent = true;
+          currentModelId = firstActive.id;
+        }
+      }
+
+      this.cachedModels = models;
+      return {
+        models,
+        currentModelId: currentModelId ?? (models[0]?.id)
+      };
+    } catch {
+      return {
+        models: this.cachedModels,
+        currentModelId: currentModelId ?? (this.cachedModels[0]?.id)
+      };
+    }
+  }
+
+  async setModel(modelId: string, sessionId?: string): Promise<void> {
+    if (sessionId) {
+      this.selectedModelBySession.set(sessionId, modelId);
+    }
+    this.defaultSelectedModel = modelId;
   }
 
   async approve(requestId?: string): Promise<void> {
