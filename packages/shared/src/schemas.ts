@@ -61,7 +61,8 @@ export const ChatMessageSchema = z.object({
 }).strict();
 
 export const PromptRequestSchema = z.object({
-  text: z.string().min(1)
+  text: z.string().min(1),
+  modelId: z.string().optional()
 }).strict();
 
 export const ApproveRequestSchema = z.object({
@@ -155,10 +156,30 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
 ]);
 
 export const CreateSessionRequestSchema = z.object({
-  text: z.string().optional()
+  text: z.string().optional(),
+  modelId: z.string().optional()
 }).strict();
 
 export const FocusSessionRequestSchema = z.object({
+  sessionId: z.string().optional()
+}).strict();
+
+export const ModelInfoSchema = z.object({
+  id: z.string().min(1),
+  label: z.string(),
+  model: z.string().optional(),
+  remainingFraction: z.number().optional(),
+  resetTime: z.string().optional(),
+  isCurrent: z.boolean().optional()
+}).strict();
+
+export const ModelsResponseSchema = z.object({
+  models: z.array(ModelInfoSchema),
+  currentModelId: z.string().optional()
+}).strict();
+
+export const SelectModelRequestSchema = z.object({
+  modelId: z.string().min(1),
   sessionId: z.string().optional()
 }).strict();
 
