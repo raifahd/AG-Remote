@@ -1376,18 +1376,6 @@ export default function ChatScreen() {
         )}
       </View>
 
-      <View
-        pointerEvents="none"
-        style={[
-          styles.bottomGlassBackdrop,
-          {
-            height: defaultBottomMargin + 85,
-            backgroundColor: isDark ? 'rgba(10, 10, 12, 0.68)' : 'rgba(250, 250, 252, 0.72)',
-            borderTopColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)'
-          }
-        ]}
-      />
-
       <Animated.View
         style={[
           styles.composerContainer,
@@ -1986,20 +1974,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     alignItems: 'center',
     zIndex: 10
-  },
-  bottomGlassBackdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderTopWidth: 1,
-    zIndex: 8,
-    ...Platform.select({
-      web: {
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)'
-      }
-    })
   },
   composer: {
     width: '100%',
