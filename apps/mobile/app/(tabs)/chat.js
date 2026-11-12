@@ -12,7 +12,8 @@ import {
   Animated,
   Easing,
   ActivityIndicator,
-  Modal
+  Modal,
+  AppState
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,6 +68,13 @@ function formatSessionTime(timestamp) {
     return `${month}, ${timeStr}`;
   }
   return `${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })}, ${timeStr}`;
+}
+
+function formatMessageTime(timestamp) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function CodeSnippet({ code, lang = 'code', theme, fontSize = 13 }) {
@@ -691,9 +699,15 @@ const WORKING_PHRASES = [
   'Reviewing and refining output...'
 ];
 
-function AgentWorkingIndicator({ theme }) {
+function AgentWorkingIndicator({ theme, startedAt }) {
   const [phraseIndex, setPhraseIndex] = useState(0);
-  const [seconds, setSeconds] = useState(0);
+
+  const getElapsed = useCallback(() => {
+    if (!startedAt) return 0;
+    return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+  }, [startedAt]);
+
+  const [seconds, setSeconds] = useState(getElapsed);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dot1 = useRef(new Animated.Value(0)).current;
@@ -701,9 +715,22 @@ function AgentWorkingIndicator({ theme }) {
   const dot3 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    setSeconds(getElapsed());
     const timer = setInterval(() => {
-      setSeconds((s) => s + 1);
+      setSeconds(getElapsed());
     }, 1000);
+
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        setSeconds(getElapsed());
+      }
+    });
+
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [getElapsed]);
 
     const phraseTimer = setInterval(() => {
       Animated.timing(fadeAnim, {
@@ -932,6 +959,7 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
     const bubbleBg = theme.userBubble || (theme.mode === 'dark' ? '#2f2f2f' : '#f2f2f2');
     const bubbleBorder = theme.userBubbleBorder || (theme.mode === 'dark' ? '#3d3d3d' : '#e4e4e7');
     const bubbleTextColor = theme.userText || (theme.mode === 'dark' ? '#ececec' : '#0d0d0d');
+    const formattedTime = formatMessageTime(item.timestamp);
 
     return (
       <View style={styles.userMessageRow}>
@@ -959,6 +987,11 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
             </Text>
           )}
         </View>
+        {Boolean(formattedTime) && (
+          <Text style={[styles.userMessageTime, { color: theme.muted }]}>
+            {formattedTime}
+          </Text>
+        )}
       </View>
     );
   }
@@ -1020,9 +1053,10 @@ export default function ChatScreen() {
   const [availableModels, setAvailableModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [modelsModalVisible, setModelsModalVisible] = useState(false);
+  const [workingStartedAt, setWorkingStartedAt] = useState(null);
 
   const flatListRef = useRef(null);
-  const defaultBottomMargin = Math.max(insets.bottom, 16) + 78;
+  const defaultBottomMargin = Math.max(insets.bottom, 8) + 66;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
 
@@ -1041,7 +1075,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!isKeyboardOpenRef.current) {
-      composerBottomAnim.setValue(Math.max(insets.bottom, 16) + 78);
+      composerBottomAnim.setValue(Math.max(insets.bottom, 8) + 66);
     }
   }, [insets.bottom]);
 
@@ -1075,7 +1109,7 @@ export default function ChatScreen() {
     const onKeyboardHide = (e) => {
       isKeyboardOpenRef.current = false;
       setIsKeyboardOpen(false);
-      const targetBottom = Math.max(insets.bottom, 16) + 78;
+      const targetBottom = Math.max(insets.bottom, 8) + 66;
       const duration = Platform.OS === 'ios' ? (e?.duration || 250) : 200;
 
       Animated.timing(composerBottomAnim, {
@@ -1176,6 +1210,51 @@ export default function ChatScreen() {
     );
     return () => ws.close();
   }, [profile, loadMessages]);
+
+  useEffect(() => {
+    if (isWorking) {
+      if (!workingStartedAt) {
+        const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1] : null;
+        if (lastMsg && lastMsg.role === 'user' && lastMsg.timestamp) {
+          setWorkingStartedAt(lastMsg.timestamp);
+        } else {
+          setWorkingStartedAt(Date.now());
+        }
+      }
+    } else if (!sending) {
+      setWorkingStartedAt(null);
+    }
+  }, [isWorking, messages, workingStartedAt, sending]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const intervalMs = isWorking ? 1800 : 5000;
+    const pollTimer = setInterval(() => {
+      const sid = currentSessionId || undefined;
+      fetchMessages(profile, 50, sid)
+        .then((list) => {
+          if (list && list.length > 0) {
+            setMessages((prev) => {
+              if (
+                list.length !== prev.length ||
+                list[list.length - 1]?.id !== prev[prev.length - 1]?.id ||
+                list[list.length - 1]?.text !== prev[prev.length - 1]?.text
+              ) {
+                return list;
+              }
+              return prev;
+            });
+          }
+        })
+        .catch(() => {});
+      fetchState(profile)
+        .then((st) => {
+          if (st?.status) setAgentStatus(st.status);
+        })
+        .catch(() => {});
+    }, intervalMs);
+    return () => clearInterval(pollTimer);
+  }, [profile, currentSessionId, isWorking]);
 
   const scrollToBottom = () => {
     if (messages && messages.length > 0) {
@@ -1291,6 +1370,7 @@ export default function ChatScreen() {
         timestamp: Date.now()
       };
 
+      setWorkingStartedAt(Date.now());
       setMessages((prev) => [...prev, optimisticMsg]);
       setTimeout(scrollToBottom, 60);
 
@@ -1315,11 +1395,13 @@ export default function ChatScreen() {
       setInputText(trimmed);
       setSending(false);
       setSendingStatus('');
+      setWorkingStartedAt(null);
     }
   };
 
   const handleStop = async () => {
     if (!profile) return;
+    setWorkingStartedAt(null);
     try {
       await sendStop(profile, currentSessionId || undefined);
       await loadMessages(currentSessionId || undefined);
@@ -1386,13 +1468,13 @@ export default function ChatScreen() {
           contentContainerStyle={[
             styles.listContent,
             messages.length > 0
-              ? { paddingTop: defaultBottomMargin + 76 }
-              : { paddingBottom: defaultBottomMargin + 76 },
+              ? { paddingTop: defaultBottomMargin + 115 }
+              : { paddingBottom: defaultBottomMargin + 115 },
             messages.length === 0 && styles.listContentEmpty
           ]}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
-            isWorking ? <AgentWorkingIndicator theme={theme} /> : null
+            isWorking ? <AgentWorkingIndicator theme={theme} startedAt={workingStartedAt} /> : null
           }
           ListFooterComponent={
             messages.length > 0 ? (
@@ -1417,7 +1499,7 @@ export default function ChatScreen() {
               {
                 backgroundColor: isDark ? 'rgba(28, 28, 32, 0.85)' : 'rgba(255, 255, 255, 0.9)',
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
-                bottom: defaultBottomMargin + 76
+                bottom: defaultBottomMargin + 102
               }
             ]}
             onPress={scrollToBottom}
@@ -1441,8 +1523,9 @@ export default function ChatScreen() {
             style={[
               styles.sendingBar,
               {
-                backgroundColor: isDark ? 'rgba(24, 24, 28, 0.85)' : 'rgba(255, 255, 255, 0.88)',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)'
+                backgroundColor: isDark ? 'rgba(22, 22, 28, 0.82)' : 'rgba(255, 255, 255, 0.85)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+                borderTopColor: isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.95)'
               }
             ]}
           >
@@ -1466,8 +1549,9 @@ export default function ChatScreen() {
                   style={[
                     styles.attachmentChip,
                     {
-                      backgroundColor: isDark ? 'rgba(32, 32, 38, 0.82)' : 'rgba(240, 240, 245, 0.88)',
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)'
+                      backgroundColor: isDark ? 'rgba(24, 24, 32, 0.80)' : 'rgba(242, 242, 248, 0.85)',
+                      borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.08)',
+                      borderTopColor: isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.95)'
                     }
                   ]}
                 >
@@ -1501,8 +1585,9 @@ export default function ChatScreen() {
             style={[
               styles.modelPill,
               {
-                backgroundColor: isDark ? 'rgba(28, 28, 34, 0.95)' : 'rgba(242, 242, 247, 0.96)',
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.14)' : 'rgba(0, 0, 0, 0.08)'
+                backgroundColor: isDark ? 'rgba(24, 24, 30, 0.80)' : 'rgba(255, 255, 255, 0.84)',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.08)',
+                borderTopColor: isDark ? 'rgba(255, 255, 255, 0.28)' : 'rgba(255, 255, 255, 0.95)'
               }
             ]}
             onPress={() => setModelsModalVisible(true)}
@@ -1543,9 +1628,9 @@ export default function ChatScreen() {
           style={[
             styles.composer,
             {
-              backgroundColor: isDark ? '#1a1a1f' : '#ffffff',
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(0, 0, 0, 0.10)',
-              borderTopColor: isDark ? 'rgba(255, 255, 255, 0.30)' : 'rgba(255, 255, 255, 0.95)'
+              backgroundColor: isDark ? 'rgba(22, 22, 28, 0.82)' : 'rgba(255, 255, 255, 0.85)',
+              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.08)',
+              borderTopColor: isDark ? 'rgba(255, 255, 255, 0.30)' : 'rgba(255, 255, 255, 0.96)'
             }
           ]}
         >
@@ -1970,11 +2055,18 @@ const styles = StyleSheet.create({
     maxWidth: '88%'
   },
   userMessageRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
     marginBottom: 14,
     marginLeft: 'auto',
     maxWidth: '90%'
+  },
+  userMessageTime: {
+    fontSize: 10,
+    fontFamily: fontRegular,
+    marginTop: 3,
+    marginRight: 4,
+    opacity: 0.72
   },
   userBubble: {
     paddingVertical: 10,
@@ -2270,7 +2362,23 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     borderWidth: 1,
     gap: 8,
-    maxWidth: 220
+    maxWidth: 220,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8
+      },
+      android: {
+        elevation: 6
+      },
+      web: {
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.16)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)'
+      }
+    })
   },
   attachmentChipTextWrap: {
     flexShrink: 1
@@ -2341,11 +2449,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 9999,
     borderWidth: 1,
-    marginBottom: 6
+    marginBottom: 6,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8
+      },
+      android: {
+        elevation: 6
+      },
+      web: {
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.16)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)'
+      }
+    })
   },
   sendingText: {
     fontSize: 11,
@@ -2714,10 +2838,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5.5,
     borderRadius: 9999,
-    borderWidth: 1
+    borderWidth: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 10
+      },
+      android: {
+        elevation: 6
+      },
+      web: {
+        boxShadow: '0 6px 20px rgba(0, 0, 0, 0.18)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)'
+      }
+    })
   },
   modelPillText: {
     fontSize: 11,
