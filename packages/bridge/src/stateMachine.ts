@@ -20,6 +20,8 @@ export class AgentStateMachine {
   private readonly sessionStatuses = new Map<string, RunStatus>();
   private readonly sessionTitles = new Map<string, string>();
   private readonly sessionApprovals = new Map<string, PendingApproval>();
+  private readonly sessionActions = new Map<string, string>();
+  private readonly sessionThoughts = new Map<string, string>();
   private readonly debounceTimers = new Map<string, NodeJS.Timeout>();
   private readonly debounceMs: number;
   private readonly listeners = new Set<(e: AgentEvent) => void>();
@@ -43,6 +45,14 @@ export class AgentStateMachine {
 
   setSessionTitle(sessionId: string, title: string): void {
     this.sessionTitles.set(sessionId, title);
+  }
+
+  getSessionAction(sessionId: string): string | undefined {
+    return this.sessionActions.get(sessionId);
+  }
+
+  getSessionThinking(sessionId: string): string | undefined {
+    return this.sessionThoughts.get(sessionId);
   }
 
   getPendingApproval(sessionId?: string): PendingApproval | null {
@@ -80,7 +90,7 @@ export class AgentStateMachine {
     }
   }
 
-  onGenerating(sessionId?: string, title?: string): void {
+  onGenerating(sessionId?: string, title?: string, action?: string, thinking?: string): void {
     const sid = sessionId ?? this.activeSessionId ?? 'default-session';
     if (sessionId) {
       this.activeSessionId = sessionId;
@@ -91,10 +101,22 @@ export class AgentStateMachine {
     this.cancelDebounce(sid);
     this.sessionApprovals.delete(sid);
 
+    const prevAction = this.sessionActions.get(sid);
+    const prevThought = this.sessionThoughts.get(sid);
+    if (action !== undefined) {
+      this.sessionActions.set(sid, action);
+    }
+    if (thinking !== undefined) {
+      this.sessionThoughts.set(sid, thinking);
+    }
+
     const prevStatus = this.sessionStatuses.get(sid);
-    if (prevStatus !== 'generating') {
+    const actionChanged = action !== undefined && action !== prevAction;
+    const thoughtChanged = thinking !== undefined && thinking !== prevThought;
+
+    if (prevStatus !== 'generating' || actionChanged || thoughtChanged) {
       this.sessionStatuses.set(sid, 'generating');
-      this.emitStatusChanged(sid, 'generating');
+      this.emitStatusChanged(sid, 'generating', action ?? prevAction, thinking ?? prevThought);
     }
   }
 
@@ -145,6 +167,8 @@ export class AgentStateMachine {
       const st = this.sessionStatuses.get(sid);
       if (st === 'generating') {
         this.sessionStatuses.set(sid, 'idle');
+        this.sessionActions.delete(sid);
+        this.sessionThoughts.delete(sid);
         this.emitStatusChanged(sid, 'idle');
 
         const resolvedTitle = this.sessionTitles.get(sid);
@@ -165,6 +189,8 @@ export class AgentStateMachine {
     const sid = sessionId ?? this.activeSessionId ?? 'default-session';
     this.cancelDebounce(sid);
     this.sessionApprovals.delete(sid);
+    this.sessionActions.delete(sid);
+    this.sessionThoughts.delete(sid);
     this.sessionStatuses.set(sid, 'idle');
     this.emitStatusChanged(sid, 'idle');
   }
@@ -172,6 +198,8 @@ export class AgentStateMachine {
   onSessionCreated(sessionId: string, title: string): void {
     this.sessionTitles.set(sessionId, title);
     this.sessionStatuses.set(sessionId, 'idle');
+    this.sessionActions.delete(sessionId);
+    this.sessionThoughts.delete(sessionId);
     const event: SessionCreatedEvent = {
       type: 'session_created',
       sessionId,
@@ -201,6 +229,8 @@ export class AgentStateMachine {
     const sid = sessionId ?? this.activeSessionId ?? 'default-session';
     this.cancelDebounce(sid);
     this.sessionStatuses.set(sid, 'error');
+    this.sessionActions.delete(sid);
+    this.sessionThoughts.delete(sid);
     this.emitStatusChanged(sid, 'error');
 
     const errorEvent: BridgeErrorEvent = {
@@ -219,6 +249,8 @@ export class AgentStateMachine {
     this.sessionStatuses.clear();
     this.sessionTitles.clear();
     this.sessionApprovals.clear();
+    this.sessionActions.clear();
+    this.sessionThoughts.clear();
     this.activeSessionId = null;
   }
 
@@ -239,11 +271,13 @@ export class AgentStateMachine {
     }
   }
 
-  private emitStatusChanged(sessionId: string, status: RunStatus): void {
+  private emitStatusChanged(sessionId: string, status: RunStatus, action?: string, thinking?: string): void {
     const event: StatusChangedEvent = {
       type: 'status_changed',
       sessionId,
       status,
+      action: action ?? this.sessionActions.get(sessionId),
+      thinking: thinking ?? this.sessionThoughts.get(sessionId),
       at: Date.now()
     };
     this.emit(event);

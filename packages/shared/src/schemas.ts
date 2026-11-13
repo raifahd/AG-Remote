@@ -42,6 +42,8 @@ export const SessionSummarySchema = z.object({
   stepCount: z.number().int().nonnegative().optional(),
   lastActivityAt: z.number().int().nonnegative().optional(),
   status: RunStatusSchema.optional(),
+  action: z.string().optional(),
+  thinking: z.string().optional(),
   workspace: z.string().optional(),
   lastModified: z.number().int().nonnegative().optional()
 }).strict();
@@ -57,7 +59,15 @@ export const ChatMessageSchema = z.object({
   id: z.string().min(1),
   role: z.enum(['user', 'agent']),
   text: z.string(),
-  timestamp: z.number().int().nonnegative()
+  timestamp: z.number().int().nonnegative(),
+  kind: z.enum(['message', 'tool', 'thought']).optional(),
+  title: z.string().optional(),
+  thinking: z.string().optional(),
+  toolName: z.string().optional(),
+  toolArgs: z.string().optional(),
+  toolSummary: z.string().optional(),
+  toolStatus: z.string().optional(),
+  summary: z.string().optional()
 }).strict();
 
 export const PromptRequestSchema = z.object({
@@ -95,6 +105,8 @@ export const StatusChangedEventSchema = z.object({
   type: z.literal('status_changed'),
   sessionId: z.string(),
   status: RunStatusSchema,
+  action: z.string().optional(),
+  thinking: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 

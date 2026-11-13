@@ -4,7 +4,9 @@ import {
   ApproveRequestSchema,
   HealthResponseSchema,
   AgentEventSchema,
-  QuietHoursSettingsSchema
+  QuietHoursSettingsSchema,
+  ChatMessageSchema,
+  StatusChangedEventSchema
 } from '../src/schemas.js';
 
 describe('Shared Schemas', () => {
@@ -78,5 +80,43 @@ describe('Shared Schemas', () => {
       at: 1000
     };
     expect(() => AgentEventSchema.parse(invalid)).toThrow();
+  });
+
+  it('validates chat messages with kind, thinking, and tool execution fields', () => {
+    const toolMsg = {
+      id: 'msg-tool-1',
+      role: 'agent' as const,
+      text: 'ls -la',
+      timestamp: Date.now(),
+      kind: 'tool' as const,
+      title: 'Run terminal command',
+      toolName: 'run_command',
+      toolArgs: '{"CommandLine":"ls -la"}',
+      toolSummary: 'List directory contents',
+      toolStatus: 'done' as const
+    };
+    expect(ChatMessageSchema.parse(toolMsg)).toEqual(toolMsg);
+
+    const thoughtMsg = {
+      id: 'msg-th-1',
+      role: 'agent' as const,
+      text: 'Checking files...',
+      timestamp: Date.now(),
+      kind: 'thought' as const,
+      thinking: 'Looking into the package.json dependencies.'
+    };
+    expect(ChatMessageSchema.parse(thoughtMsg)).toEqual(thoughtMsg);
+  });
+
+  it('validates status changed event with action and thinking', () => {
+    const event = {
+      type: 'status_changed' as const,
+      status: 'generating' as const,
+      sessionId: 'sess-abc',
+      action: 'Editing src/index.ts',
+      thinking: 'Refactoring the function parameters',
+      at: Date.now()
+    };
+    expect(StatusChangedEventSchema.parse(event)).toEqual(event);
   });
 });

@@ -8,6 +8,7 @@ import {
   Notification01Icon,
   ArrowRight01Icon,
   ArrowDown01Icon,
+  ArrowUp01Icon,
   MoreHorizontalIcon,
   CommandLineIcon,
   File01Icon,
@@ -22,7 +23,9 @@ import {
   Sun01Icon,
   ComputerIcon,
   Tick02Icon,
-  Wifi01Icon
+  Wifi01Icon,
+  Clock01Icon,
+  AiBrain01Icon
 } from '@hugeicons/core-free-icons';
 
 const ICON_MAP = {
@@ -32,9 +35,11 @@ const ICON_MAP = {
   settings: Settings01Icon,
   bell: Notification01Icon,
   chevron: ArrowRight01Icon,
+  'chevron-up': ArrowUp01Icon,
   more: MoreHorizontalIcon,
   terminal: CommandLineIcon,
   file: File01Icon,
+  code: CommandLineIcon,
   shield: ShieldCheckIcon,
   send: ArrowUp02Icon,
   plus: Add01Icon,
@@ -42,6 +47,8 @@ const ICON_MAP = {
   attach: Attachment01Icon,
   arrow: ArrowRight01Icon,
   'arrow-down': ArrowDown01Icon,
+  clock: Clock01Icon,
+  brain: AiBrain01Icon,
   x: Cancel01Icon,
   moon: Moon01Icon,
   sun: Sun01Icon,

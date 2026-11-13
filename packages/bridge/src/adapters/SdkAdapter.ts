@@ -47,6 +47,11 @@ interface RawStep {
   metadata?: {
     createdAt?: string;
     executionId?: string;
+    toolCall?: {
+      id?: string;
+      name?: string;
+      argumentsJson?: string;
+    };
   };
   userInput?: {
     userResponse?: string;
@@ -196,6 +201,8 @@ function readTranscriptMessages(brainDir: string | null, cascadeId: string, limi
       try {
         const step = JSON.parse(line);
         const timestamp = step.created_at ? new Date(step.created_at).getTime() : Date.now();
+        const stepIndex = step.step_index !== undefined ? step.step_index : idx++;
+
         if (step.type === 'USER_INPUT' && step.content) {
           const reqMatch = typeof step.content === 'string'
             ? step.content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/)
@@ -203,17 +210,54 @@ function readTranscriptMessages(brainDir: string | null, cascadeId: string, limi
           const userText = reqMatch ? reqMatch[1].trim() : (typeof step.content === 'string' ? step.content : '');
           if (userText) {
             messages.push({
-              id: `user-${cascadeId}-${idx++}`,
+              id: `user-${cascadeId}-${stepIndex}`,
               role: 'user',
+              kind: 'message',
               text: userText,
+              timestamp
+            });
+          }
+        } else if (step.tool_calls && Array.isArray(step.tool_calls) && step.tool_calls.length > 0) {
+          for (let tcIdx = 0; tcIdx < step.tool_calls.length; tcIdx++) {
+            const tc = step.tool_calls[tcIdx];
+            const tcName = tc?.name || 'tool';
+            const args = tc?.args || {};
+            let summary = args.toolSummary;
+            if (!summary) {
+              if (args.CommandLine) summary = String(args.CommandLine);
+              else if (args.Path) summary = String(args.Path);
+              else if (args.query) summary = String(args.query);
+              else summary = tcName;
+            }
+            messages.push({
+              id: `tool-${cascadeId}-${stepIndex}-${tcIdx}`,
+              role: 'agent',
+              kind: 'tool',
+              title: tcName,
+              text: String(summary),
+              toolName: tcName,
+              toolSummary: String(summary),
+              thinking: step.thinking || undefined,
               timestamp
             });
           }
         } else if (step.type === 'PLANNER_RESPONSE' && step.content) {
           messages.push({
-            id: `agent-${cascadeId}-${idx++}`,
+            id: `agent-${cascadeId}-${stepIndex}`,
             role: 'agent',
+            kind: 'message',
             text: typeof step.content === 'string' ? step.content : JSON.stringify(step.content),
+            thinking: step.thinking || undefined,
+            timestamp
+          });
+        } else if (step.thinking && !step.content) {
+          messages.push({
+            id: `thought-${cascadeId}-${stepIndex}`,
+            role: 'agent',
+            kind: 'thought',
+            title: 'Thinking Process',
+            text: step.thinking,
+            thinking: step.thinking,
             timestamp
           });
         }
@@ -221,6 +265,36 @@ function readTranscriptMessages(brainDir: string | null, cascadeId: string, limi
     }
   } catch {}
   return messages.slice(-limit);
+}
+
+function getLatestSessionActivity(brainDir: string | null, cascadeId: string): { action?: string; thinking?: string } {
+  if (!brainDir) return {};
+  const transcriptPath = path.join(brainDir, cascadeId, '.system_generated', 'logs', 'transcript.jsonl');
+  if (!fs.existsSync(transcriptPath)) return {};
+  try {
+    const content = fs.readFileSync(transcriptPath, 'utf8');
+    const lines = content.trim().split('\n').filter(Boolean);
+    for (let i = lines.length - 1; i >= 0 && i >= lines.length - 20; i--) {
+      const rawLine = lines[i];
+      if (!rawLine) continue;
+      const step = JSON.parse(rawLine);
+      if (step.tool_calls && Array.isArray(step.tool_calls) && step.tool_calls.length > 0) {
+        const tc = step.tool_calls[0];
+        const sum = tc?.args?.toolSummary || tc?.args?.CommandLine || tc?.args?.Path || tc?.name || 'tool';
+        return {
+          action: `${tc.name || 'tool'}: ${sum}`.slice(0, 100),
+          thinking: step.thinking ? step.thinking.slice(0, 200) : undefined
+        };
+      }
+      if (step.thinking) {
+        return {
+          action: 'Thinking...',
+          thinking: step.thinking.slice(0, 200)
+        };
+      }
+    }
+  } catch {}
+  return {};
 }
 
 export class SdkAdapter implements AgentAdapter {
@@ -368,7 +442,8 @@ export class SdkAdapter implements AgentAdapter {
           if (this.stoppedSessions.has(id)) {
             continue;
           }
-          this.stateMachine.onGenerating(id, title);
+          const activity = getLatestSessionActivity(this.brainDir, id);
+          this.stateMachine.onGenerating(id, title, activity.action, activity.thinking);
         } else {
           this.stoppedSessions.delete(id);
           this.stateMachine.onIdle(id, title);
@@ -431,7 +506,9 @@ export class SdkAdapter implements AgentAdapter {
         const item = summaries[id];
         const title = item?.summary ?? 'Untitled';
         const lastActivityAt = item?.lastModifiedTime ? new Date(item.lastModifiedTime).getTime() : undefined;
-        const status: RunStatus = item?.status === 'CASCADE_RUN_STATUS_RUNNING' ? 'generating' : 'idle';
+        const status: RunStatus = this.stateMachine.getStatus(id) || (item?.status === 'CASCADE_RUN_STATUS_RUNNING' ? 'generating' : 'idle');
+        const action = this.stateMachine.getSessionAction(id);
+        const thinking = this.stateMachine.getSessionThinking(id);
         const workspace = item?.workspaces?.[0]?.workspaceFolderAbsoluteUri;
 
         sessions.push({
@@ -440,6 +517,8 @@ export class SdkAdapter implements AgentAdapter {
           stepCount: item?.stepCount,
           lastActivityAt,
           status,
+          action,
+          thinking,
           workspace,
           lastModified: lastActivityAt
         });
@@ -511,6 +590,11 @@ export class SdkAdapter implements AgentAdapter {
       return [];
     }
 
+    const diskMsgs = readTranscriptMessages(this.brainDir, cascadeId, limit);
+    if (diskMsgs.length > 0) {
+      return diskMsgs;
+    }
+
     try {
       const resp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId });
       const steps = resp?.trajectory?.steps ?? [];
@@ -522,31 +606,44 @@ export class SdkAdapter implements AgentAdapter {
           continue;
         }
 
+        const timestamp = step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now();
+
         if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && step.userInput?.userResponse) {
           messages.push({
             id: `user-${step.metadata?.executionId ?? 'u'}-${i}`,
             role: 'user',
+            kind: 'message',
             text: step.userInput.userResponse,
-            timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
+            timestamp
           });
         } else if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.plannerResponse?.response) {
           messages.push({
             id: `agent-${step.plannerResponse.messageId ?? step.metadata?.executionId ?? 'a'}-${i}`,
             role: 'agent',
+            kind: 'message',
             text: step.plannerResponse.response,
-            timestamp: step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now()
+            timestamp
+          });
+        } else if (step.metadata?.toolCall) {
+          const tc = step.metadata.toolCall;
+          const tcName = tc.name || 'tool';
+          const tcArgs = tc.argumentsJson || '';
+          messages.push({
+            id: `tool-${tc.id || i}`,
+            role: 'agent',
+            kind: 'tool',
+            title: tcName,
+            text: tcArgs || tcName,
+            toolName: tcName,
+            toolSummary: tcArgs,
+            timestamp
           });
         }
       }
 
-      if (messages.length === 0) {
-        const diskMsgs = readTranscriptMessages(this.brainDir, cascadeId, limit);
-        if (diskMsgs.length > 0) return diskMsgs;
-      }
-
       return messages.slice(-limit);
     } catch {
-      return readTranscriptMessages(this.brainDir, cascadeId, limit);
+      return [];
     }
   }
 

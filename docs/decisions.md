@@ -342,5 +342,24 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **Mobile Chat Auto-Loading on Deep-Link:**
   - In `apps/mobile/app/(tabs)/chat.js`, added immediate invocation of `loadMessages(params.sessionId)` when receiving deep-link parameters, ensuring that tapping a notification immediately switches to and displays that specific conversation's message history.
 
+## 2026-11-13: Real-Time Agent Thinking, Tool Execution Streaming, Working Timer & Session Scoping
+- **Live Agent Thinking & Tool Execution Streaming:**
+  - Extended `ChatMessageSchema` with `kind` (`message` | `tool` | `thought`), `title`, `thinking`, `toolName`, `toolArgs`, `toolSummary`, and `toolStatus`.
+  - In `SdkAdapter`, enhanced transcript parsing by inspecting both the active `transcript.jsonl` stream in `<brainDir>/<cascadeId>/.system_generated/logs/` and ConnectRPC trajectory steps.
+  - Extracted real-time `thinking` blocks and `tool_calls` arrays (including command lines, file paths, and tool summaries).
+  - Extended `StatusChangedEvent` and `AgentStateMachine` to broadcast current `action` and `thinking` previews to all connected clients over WebSockets.
+- **Accurate Working Timer:**
+  - Added tracking of the exact millisecond when each prompt was dispatched (`sessionWorkingStartedAt[sessionId]`).
+  - Fallback resolution verifies the timestamp of the latest user prompt in the message history rather than falling back to `Date.now()`, preventing timer resets when intermediate tool or thought messages arrive.
+  - Implemented live elapsed time formatter (`MM:SS` and `HH:MM:SS`) updated every second and synchronized with `AppState` changes.
+- **Strict Session-Scoped Working Status:**
+  - Fixed cross-session state leakage where a generating status in one session would display the working indicator at the bottom of unrelated conversations.
+  - Replaced single global status checks with per-session tracking: `sessionStatuses[currentSessionId]`.
+  - The working indicator and active generation controls only appear when the currently opened conversation matches a session in the `generating` state.
+- **High-Performance UI & Low Latency Polling:**
+  - Reduced active polling intervals from 1800ms down to 400ms while generating, paired with instant optimistic user message rendering and real-time WebSocket state notifications.
+  - Added collapsible `ThoughtAccordion` with brain icon for deep agent reasoning, and expandable `ToolStepCard` for terminal and file tool actions.
+
+
 
 

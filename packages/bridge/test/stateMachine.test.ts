@@ -84,5 +84,28 @@ describe('AgentStateMachine', () => {
     const errEvent = events.find((e) => e.type === 'bridge_error');
     expect(errEvent).toBeDefined();
   });
+
+  it('tracks action and thinking per session during generating state', () => {
+    const sm = new AgentStateMachine();
+    const events: AgentEvent[] = [];
+    sm.onEvent((e) => events.push(e));
+
+    sm.onGenerating('sess-1', 'Main Task', 'Running tests', 'Analyzing output files');
+    expect(sm.getStatus()).toBe('generating');
+    expect(sm.getSessionAction('sess-1')).toBe('Running tests');
+    expect(sm.getSessionThinking('sess-1')).toBe('Analyzing output files');
+
+    const statusEvent = events.find((e) => e.type === 'status_changed' && e.sessionId === 'sess-1');
+    expect(statusEvent).toBeDefined();
+    if (statusEvent && statusEvent.type === 'status_changed') {
+      expect(statusEvent.action).toBe('Running tests');
+      expect(statusEvent.thinking).toBe('Analyzing output files');
+    }
+
+    sm.onIdle('sess-1');
+    vi.advanceTimersByTime(2500);
+    expect(sm.getSessionAction('sess-1')).toBeUndefined();
+    expect(sm.getSessionThinking('sess-1')).toBeUndefined();
+  });
 });
 

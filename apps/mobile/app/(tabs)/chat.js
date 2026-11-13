@@ -701,16 +701,13 @@ const WORKING_PHRASES = [
   'Reviewing and refining output...'
 ];
 
-function AgentWorkingIndicator({ theme, startedAt }) {
-  const [phraseIndex, setPhraseIndex] = useState(0);
-
+function AgentWorkingIndicator({ theme, startedAt, action, thinking }) {
   const getElapsed = useCallback(() => {
     if (!startedAt) return 0;
     return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
   }, [startedAt]);
 
   const [seconds, setSeconds] = useState(getElapsed);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const dot1 = useRef(new Animated.Value(0)).current;
   const dot2 = useRef(new Animated.Value(0)).current;
@@ -735,35 +732,17 @@ function AgentWorkingIndicator({ theme, startedAt }) {
   }, [getElapsed]);
 
   useEffect(() => {
-    const phraseTimer = setInterval(() => {
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 500,
-        easing: Easing.inOut(Easing.ease),
-        useNativeDriver: true
-      }).start(({ finished }) => {
-        if (!finished) return;
-        setPhraseIndex((prev) => (prev + 1) % WORKING_PHRASES.length);
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true
-        }).start();
-      });
-    }, 8000);
-
     const pulse = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
-          toValue: 1.14,
-          duration: 800,
+          toValue: 1.12,
+          duration: 700,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true
         }),
         Animated.timing(pulseAnim, {
           toValue: 1,
-          duration: 800,
+          duration: 700,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true
         })
@@ -777,30 +756,29 @@ function AgentWorkingIndicator({ theme, startedAt }) {
           Animated.delay(delay),
           Animated.timing(anim, {
             toValue: -5,
-            duration: 280,
+            duration: 250,
             easing: Easing.out(Easing.ease),
             useNativeDriver: true
           }),
           Animated.timing(anim, {
             toValue: 0,
-            duration: 280,
+            duration: 250,
             easing: Easing.in(Easing.ease),
             useNativeDriver: true
           }),
-          Animated.delay(440 - delay)
+          Animated.delay(380 - delay)
         ])
       );
     };
 
     const d1 = makeDotAnim(dot1, 0);
-    const d2 = makeDotAnim(dot2, 140);
-    const d3 = makeDotAnim(dot3, 280);
+    const d2 = makeDotAnim(dot2, 120);
+    const d3 = makeDotAnim(dot3, 240);
     d1.start();
     d2.start();
     d3.start();
 
     return () => {
-      clearInterval(phraseTimer);
       pulse.stop();
       d1.stop();
       d2.stop();
@@ -811,8 +789,18 @@ function AgentWorkingIndicator({ theme, startedAt }) {
   const formatTime = (s) => {
     const mins = Math.floor(s / 60);
     const secs = s % 60;
+    if (mins >= 60) {
+      const hrs = Math.floor(mins / 60);
+      const remMins = mins % 60;
+      return `${hrs.toString().padStart(2, '0')}:${remMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const isExecutingTool = Boolean(action && !action.startsWith('Thinking'));
+  const badgeLabel = isExecutingTool ? 'EXECUTING' : (thinking ? 'REASONING' : 'THINKING');
+  const badgeColor = isExecutingTool ? theme.success : theme.accent;
+  const displayText = action || (thinking ? (thinking.length > 140 ? `${thinking.slice(0, 137)}...` : thinking) : 'Processing instructions...');
 
   return (
     <View style={styles.agentMessageRow}>
@@ -820,7 +808,7 @@ function AgentWorkingIndicator({ theme, startedAt }) {
         style={[
           styles.agentAvatar,
           {
-            backgroundColor: theme.accent,
+            backgroundColor: badgeColor,
             transform: [{ scale: pulseAnim }]
           }
         ]}
@@ -832,34 +820,37 @@ function AgentWorkingIndicator({ theme, startedAt }) {
           styles.agentWorkingBubble,
           {
             backgroundColor: theme.surface,
-            borderColor: `${theme.accent}45`
+            borderColor: `${badgeColor}55`
           }
         ]}
       >
         <View style={styles.agentWorkingHeader}>
-          <View style={styles.agentWorkingBadge}>
-            <View style={[styles.agentWorkingLiveDot, { backgroundColor: theme.accent }]} />
-            <Text style={[styles.agentWorkingBadgeText, { color: theme.accent }]}>
-              THINKING
+          <View style={[styles.agentWorkingBadge, { backgroundColor: `${badgeColor}18`, borderColor: `${badgeColor}40`, borderWidth: 1, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 }]}>
+            <View style={[styles.agentWorkingLiveDot, { backgroundColor: badgeColor }]} />
+            <Text style={[styles.agentWorkingBadgeText, { color: badgeColor }]}>
+              {badgeLabel}
             </Text>
           </View>
-          <Text style={[styles.agentWorkingTimer, { color: theme.muted }]}>
-            {formatTime(seconds)}
-          </Text>
+          <View style={styles.agentWorkingTimerWrap}>
+            <Icon name="clock" size={12} color={theme.muted} />
+            <Text style={[styles.agentWorkingTimer, { color: theme.text }]}>
+              {formatTime(seconds)}
+            </Text>
+          </View>
         </View>
 
-        <Animated.View style={[styles.agentWorkingPhraseWrap, { opacity: fadeAnim }]}>
-          <Text style={[styles.agentWorkingPhrase, { color: theme.text }]}>
-            {WORKING_PHRASES[phraseIndex]}
+        <View style={styles.agentWorkingPhraseWrap}>
+          <Text style={[styles.agentWorkingPhrase, { color: theme.text }]} numberOfLines={3}>
+            {displayText}
           </Text>
-        </Animated.View>
+        </View>
 
         <View style={styles.agentWorkingDotsRow}>
           <Animated.View
             style={[
               styles.agentWorkingDot,
               {
-                backgroundColor: theme.accent,
+                backgroundColor: badgeColor,
                 transform: [{ translateY: dot1 }]
               }
             ]}
@@ -868,7 +859,7 @@ function AgentWorkingIndicator({ theme, startedAt }) {
             style={[
               styles.agentWorkingDot,
               {
-                backgroundColor: theme.accent,
+                backgroundColor: badgeColor,
                 transform: [{ translateY: dot2 }]
               }
             ]}
@@ -877,7 +868,7 @@ function AgentWorkingIndicator({ theme, startedAt }) {
             style={[
               styles.agentWorkingDot,
               {
-                backgroundColor: theme.accent,
+                backgroundColor: badgeColor,
                 transform: [{ translateY: dot3 }]
               }
             ]}
@@ -888,14 +879,47 @@ function AgentWorkingIndicator({ theme, startedAt }) {
   );
 }
 
-const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, fontSize = 13 }) {
-  if (!item) return null;
-  const isUser = item.role === 'user' || item.sender === 'user';
-  const isTool = item.kind === 'tool';
+function ThoughtAccordion({ thinking, theme }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!thinking) return null;
 
-  if (isTool) {
-    return (
-      <View
+  return (
+    <View style={[styles.thoughtCard, { backgroundColor: theme.mode === 'dark' ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)', borderColor: theme.border }]}>
+      <TouchableOpacity
+        style={styles.thoughtHeader}
+        onPress={() => setExpanded((prev) => !prev)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.thoughtTitleRow}>
+          <Icon name="brain" size={14} color={theme.accent} />
+          <Text style={[styles.thoughtTitle, { color: theme.accent }]}>
+            Thought Process
+          </Text>
+        </View>
+        <Icon name={expanded ? 'chevron-up' : 'chevron'} size={14} color={theme.muted} />
+      </TouchableOpacity>
+      {expanded && (
+        <View style={[styles.thoughtBody, { borderLeftColor: theme.accent }]}>
+          <Text style={[styles.thoughtText, { color: theme.muted }]}>
+            {thinking}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ToolStepCard({ item, theme }) {
+  const [expanded, setExpanded] = useState(false);
+  const toolName = item.toolName || item.title || 'Executed tool';
+  const detail = item.text || item.toolSummary || item.summary || '';
+  const isCommand = toolName.includes('command') || toolName.includes('terminal');
+  const isFile = toolName.includes('file') || toolName.includes('edit');
+  const iconName = isCommand ? 'terminal' : (isFile ? 'file' : 'terminal');
+
+  return (
+    <View style={styles.toolStepWrapper}>
+      <TouchableOpacity
         style={[
           styles.toolStep,
           {
@@ -903,6 +927,8 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
             borderColor: theme.border
           }
         ]}
+        onPress={() => setExpanded((prev) => !prev)}
+        activeOpacity={0.8}
       >
         <View
           style={[
@@ -913,17 +939,43 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
             }
           ]}
         >
-          <Icon name="terminal" size={17} color={theme.accent} />
+          <Icon name={iconName} size={15} color={theme.accent} />
         </View>
         <View style={styles.toolStepContent}>
           <Text style={[styles.toolStepTitle, { color: theme.text }]} numberOfLines={1}>
-            {item.title || 'Executed tool'}
+            {toolName}
           </Text>
           <Text style={[styles.toolStepDesc, { color: theme.muted }]} numberOfLines={1}>
-            {item.text || item.summary || 'Command output'}
+            {detail}
           </Text>
         </View>
-        <Icon name="chevron" size={17} color={theme.muted} />
+        <Icon name={expanded ? 'chevron-up' : 'chevron'} size={14} color={theme.muted} />
+      </TouchableOpacity>
+      {expanded && Boolean(detail) && (
+        <View style={[styles.toolDetailsBox, { backgroundColor: theme.mode === 'dark' ? '#18181b' : '#f4f4f5', borderColor: theme.border }]}>
+          <Text style={[styles.toolDetailsText, { color: theme.text }]}>
+            {detail}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, fontSize = 13 }) {
+  if (!item) return null;
+  const isUser = item.role === 'user' || item.sender === 'user';
+  const isTool = item.kind === 'tool' || Boolean(item.toolName);
+  const isThought = item.kind === 'thought';
+
+  if (isTool) {
+    return <ToolStepCard item={item} theme={theme} />;
+  }
+
+  if (isThought) {
+    return (
+      <View style={styles.thoughtOnlyRow}>
+        <ThoughtAccordion thinking={item.text || item.thinking} theme={theme} />
       </View>
     );
   }
@@ -1003,16 +1055,21 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
       <View style={[styles.agentAvatar, { backgroundColor: theme.accent }]}>
         <Text style={styles.agentAvatarText}>AG</Text>
       </View>
-      <View
-        style={[
-          styles.agentBubble,
-          {
-            backgroundColor: theme.surface,
-            borderColor: theme.border
-          }
-        ]}
-      >
-        <MarkdownMessage text={item.text} theme={theme} fontSize={fontSize} />
+      <View style={styles.agentBubbleColumn}>
+        {Boolean(item.thinking) && (
+          <ThoughtAccordion thinking={item.thinking} theme={theme} />
+        )}
+        <View
+          style={[
+            styles.agentBubble,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border
+            }
+          ]}
+        >
+          <MarkdownMessage text={item.text} theme={theme} fontSize={fontSize} />
+        </View>
       </View>
     </View>
   );
@@ -1048,6 +1105,10 @@ export default function ChatScreen() {
   }, [sessions]);
   const [currentSessionId, setCurrentSessionId] = useState(params?.sessionId || null);
   const [currentSessionTitle, setCurrentSessionTitle] = useState(params?.sessionTitle || null);
+  const [sessionStatuses, setSessionStatuses] = useState({});
+  const [sessionActions, setSessionActions] = useState({});
+  const [sessionThoughts, setSessionThoughts] = useState({});
+  const [sessionWorkingStartedAt, setSessionWorkingStartedAt] = useState({});
   const [sessionsModalVisible, setSessionsModalVisible] = useState(false);
   const [newSessionModalVisible, setNewSessionModalVisible] = useState(false);
   const [newSessionText, setNewSessionText] = useState('');
@@ -1055,7 +1116,6 @@ export default function ChatScreen() {
   const [availableModels, setAvailableModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [modelsModalVisible, setModelsModalVisible] = useState(false);
-  const [workingStartedAt, setWorkingStartedAt] = useState(null);
   const [pendingApproval, setPendingApproval] = useState(null);
 
   const flatListRef = useRef(null);
@@ -1143,6 +1203,19 @@ export default function ChatScreen() {
         ]);
         if (sessList) {
           setSessions(sessList);
+          const map = {};
+          const actMap = {};
+          const thMap = {};
+          sessList.forEach((s) => {
+            if (s?.id) {
+              if (s.status) map[s.id] = s.status;
+              if (s.action) actMap[s.id] = s.action;
+              if (s.thinking) thMap[s.id] = s.thinking;
+            }
+          });
+          setSessionStatuses((prev) => ({ ...prev, ...map }));
+          setSessionActions((prev) => ({ ...prev, ...actMap }));
+          setSessionThoughts((prev) => ({ ...prev, ...thMap }));
         }
 
         const sid = targetSessionId !== undefined ? targetSessionId : currentSessionId;
@@ -1162,8 +1235,19 @@ export default function ChatScreen() {
           fetchMessages(active, 50, resolvedSid || undefined).catch(() => []),
           fetchModels(active, resolvedSid || undefined).catch(() => null)
         ]);
-        if (list) setMessages(list);
-        if (st?.status) setAgentStatus(st.status);
+        if (list) {
+          setMessages(list);
+          const lastUser = [...list].reverse().find((m) => m.role === 'user');
+          if (lastUser?.timestamp && resolvedSid) {
+            setSessionWorkingStartedAt((prev) => ({
+              ...prev,
+              [resolvedSid]: prev[resolvedSid] || lastUser.timestamp
+            }));
+          }
+        }
+        if (st?.status && (!resolvedSid || resolvedSid === st.activeSessionId)) {
+          setAgentStatus(st.status);
+        }
         if (modelData?.models) {
           setAvailableModels(modelData.models);
           const cur = modelData.models.find((m) => m.isCurrent) ||
@@ -1213,14 +1297,41 @@ export default function ChatScreen() {
             summary: event.summary,
             sessionId: event.sessionId
           });
-          setAgentStatus('awaiting_approval');
+          if (event.sessionId) {
+            setSessionStatuses((prev) => ({ ...prev, [event.sessionId]: 'awaiting_approval' }));
+          }
+          if (!event.sessionId || event.sessionId === currentSessionId) {
+            setAgentStatus('awaiting_approval');
+          }
           return;
         }
         if (event && event.type === 'status_changed') {
-          setAgentStatus(event.status);
-          if (event.status !== 'awaiting_approval') {
-            setPendingApproval(null);
+          if (event.sessionId) {
+            setSessionStatuses((prev) => ({
+              ...prev,
+              [event.sessionId]: event.status
+            }));
+            if (event.action) {
+              setSessionActions((prev) => ({
+                ...prev,
+                [event.sessionId]: event.action
+              }));
+            }
+            if (event.thinking) {
+              setSessionThoughts((prev) => ({
+                ...prev,
+                [event.sessionId]: event.thinking
+              }));
+            }
           }
+          if (!event.sessionId || event.sessionId === currentSessionId) {
+            setAgentStatus(event.status);
+            if (event.status !== 'awaiting_approval') {
+              setPendingApproval(null);
+            }
+          }
+          loadMessages(event.sessionId || currentSessionId);
+          return;
         }
         loadMessages();
       },
@@ -1229,26 +1340,11 @@ export default function ChatScreen() {
       }
     );
     return () => ws.close();
-  }, [profile, loadMessages]);
-
-  useEffect(() => {
-    if (isWorking) {
-      if (!workingStartedAt) {
-        const lastMsg = messages && messages.length > 0 ? messages[messages.length - 1] : null;
-        if (lastMsg && lastMsg.role === 'user' && lastMsg.timestamp) {
-          setWorkingStartedAt(lastMsg.timestamp);
-        } else {
-          setWorkingStartedAt(Date.now());
-        }
-      }
-    } else if (!sending) {
-      setWorkingStartedAt(null);
-    }
-  }, [isWorking, messages, workingStartedAt, sending]);
+  }, [profile, currentSessionId, loadMessages]);
 
   useEffect(() => {
     if (!profile) return;
-    const intervalMs = isWorking ? 1800 : 5000;
+    const intervalMs = isWorking ? 400 : 3000;
     const pollTimer = setInterval(() => {
       const sid = currentSessionId || undefined;
       fetchMessages(profile, 50, sid)
@@ -1269,7 +1365,9 @@ export default function ChatScreen() {
         .catch(() => {});
       fetchState(profile)
         .then((st) => {
-          if (st?.status) setAgentStatus(st.status);
+          if (st?.status && (!currentSessionId || currentSessionId === st.activeSessionId)) {
+            setAgentStatus(st.status);
+          }
         })
         .catch(() => {});
     }, intervalMs);
@@ -1287,6 +1385,8 @@ export default function ChatScreen() {
     setCurrentSessionId(session.id);
     setCurrentSessionTitle(session.title || 'Untitled');
     setSessionsModalVisible(false);
+    const targetStatus = sessionStatuses[session.id] || session.status || 'idle';
+    setAgentStatus(targetStatus);
     try {
       await focusSession(profile, session.id);
     } catch {}
@@ -1390,7 +1490,17 @@ export default function ChatScreen() {
         timestamp: Date.now()
       };
 
-      setWorkingStartedAt(Date.now());
+      const sentTime = Date.now();
+      if (currentSessionId) {
+        setSessionWorkingStartedAt((prev) => ({
+          ...prev,
+          [currentSessionId]: sentTime
+        }));
+        setSessionStatuses((prev) => ({
+          ...prev,
+          [currentSessionId]: 'generating'
+        }));
+      }
       setMessages((prev) => [...prev, optimisticMsg]);
       setTimeout(scrollToBottom, 60);
 
@@ -1415,13 +1525,25 @@ export default function ChatScreen() {
       setInputText(trimmed);
       setSending(false);
       setSendingStatus('');
-      setWorkingStartedAt(null);
+      if (currentSessionId) {
+        setSessionWorkingStartedAt((prev) => {
+          const next = { ...prev };
+          delete next[currentSessionId];
+          return next;
+        });
+      }
     }
   };
 
   const handleStop = async () => {
     if (!profile) return;
-    setWorkingStartedAt(null);
+    if (currentSessionId) {
+      setSessionWorkingStartedAt((prev) => {
+        const next = { ...prev };
+        delete next[currentSessionId];
+        return next;
+      });
+    }
     try {
       await sendStop(profile, currentSessionId || undefined);
       await loadMessages(currentSessionId || undefined);
@@ -1460,9 +1582,19 @@ export default function ChatScreen() {
     }
   };
 
-  const isWorking = agentStatus === 'generating';
-  const isAwaitingApproval = agentStatus === 'awaiting_approval';
+  const currentSessionStatus = currentSessionId ? (sessionStatuses[currentSessionId] || agentStatus) : agentStatus;
+  const isWorking = currentSessionStatus === 'generating';
+  const isAwaitingApproval = currentSessionStatus === 'awaiting_approval';
   const canSend = !sending && !isAwaitingApproval && (Boolean(inputText.trim()) || attachments.length > 0);
+
+  const latestUserMsg = useMemo(() => {
+    if (!messages || messages.length === 0) return null;
+    return [...messages].reverse().find((m) => m.role === 'user');
+  }, [messages]);
+
+  const workingStartedAt = (currentSessionId && sessionWorkingStartedAt[currentSessionId]) ||
+    latestUserMsg?.timestamp ||
+    Date.now();
 
   const renderItem = useCallback(
     ({ item }) => <ChatMessageBubble item={item} theme={theme} fontSize={chatTextSize} />,
@@ -1525,7 +1657,14 @@ export default function ChatScreen() {
           ]}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
-            isWorking ? <AgentWorkingIndicator theme={theme} startedAt={workingStartedAt} /> : null
+            isWorking ? (
+              <AgentWorkingIndicator
+                theme={theme}
+                startedAt={workingStartedAt}
+                action={currentSessionId ? sessionActions[currentSessionId] : undefined}
+                thinking={currentSessionId ? sessionThoughts[currentSessionId] : undefined}
+              />
+            ) : null
           }
           ListFooterComponent={
             messages.length > 0 ? (
@@ -2137,6 +2276,10 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontFamily: fontBold
   },
+  agentBubbleColumn: {
+    flex: 1,
+    gap: 6
+  },
   agentBubble: {
     paddingVertical: 11,
     paddingHorizontal: 13,
@@ -2144,8 +2287,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     borderBottomRightRadius: 16,
     borderBottomLeftRadius: 16,
-    borderWidth: 1,
-    maxWidth: '88%'
+    borderWidth: 1
   },
   userMessageRow: {
     flexDirection: 'column',
@@ -2186,6 +2328,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12
+  },
+  agentWorkingTimerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4
   },
   agentWorkingBadge: {
     flexDirection: 'row',
@@ -2287,16 +2434,67 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: fontBold
   },
+  thoughtOnlyRow: {
+    marginLeft: 35,
+    marginBottom: 8
+  },
+  thoughtCard: {
+    borderRadius: 10,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 4
+  },
+  thoughtHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 8
+  },
+  thoughtTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6
+  },
+  thoughtTitle: {
+    fontSize: 11,
+    fontFamily: fontSemiBold
+  },
+  thoughtBody: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderLeftWidth: 3,
+    borderTopColor: 'rgba(150,150,150,0.1)'
+  },
+  thoughtText: {
+    fontSize: 11,
+    fontFamily: fontRegular,
+    lineHeight: 16
+  },
+  toolStepWrapper: {
+    marginLeft: 35,
+    marginBottom: 10
+  },
   toolStep: {
     height: 52,
-    marginLeft: 35,
-    marginBottom: 14,
     borderRadius: 14,
     borderWidth: 1,
     paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9
+  },
+  toolDetailsBox: {
+    marginTop: 4,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  toolDetailsText: {
+    fontSize: 11,
+    fontFamily: fontMono,
+    lineHeight: 16
   },
   tinyIcon: {
     width: 30,
