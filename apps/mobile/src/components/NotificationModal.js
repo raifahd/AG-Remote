@@ -135,7 +135,7 @@ export default function NotificationModal({ visible, onClose }) {
                 </View>
               </View>
               <Text style={[styles.hostText, { color: theme.muted }]}>
-                Target Host: {profile?.baseUrl || '100.69.62.84:48123'}
+                Target Host: {profile?.baseUrl ? profile.baseUrl.replace(/^https?:\/\//, '') : 'Not connected'}
               </Text>
 
               <TouchableOpacity

@@ -15,7 +15,7 @@ import {
   Modal,
   AppState
 } from 'react-native';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as DocumentPicker from 'expo-document-picker';
 import { useTheme, CHAT_FONT_SIZES } from '../../src/theme.js';
@@ -623,12 +623,31 @@ function ChatEmptyState({
 
       <Text style={[styles.emptyHeading, { color: theme.text }]}>Antigravity Remote</Text>
       <Text style={[styles.emptySub, { color: theme.muted }]}>
-        {isOffline
+        {!profile
+          ? 'No bridge connected. Pair your Antigravity IDE to view live chats, send prompts, and approve agent actions.'
+          : isOffline
           ? 'Laptop is currently offline. You can browse cached conversations from the selector above.'
           : 'Connected to your remote workspace. Send a message to start.'}
       </Text>
 
-      {profile && (
+      {!profile ? (
+        <View style={[styles.activeWsCard, { backgroundColor: theme.surface, borderColor: theme.border, marginTop: 14 }]}>
+          <Text style={[styles.wsTitle, { color: theme.text, marginBottom: 4 }]}>
+            Connect Antigravity
+          </Text>
+          <Text style={[styles.wsHost, { color: theme.muted, marginBottom: 14 }]}>
+            In Antigravity on your PC, click "AG Remote" in the status bar and scan the QR code to pair.
+          </Text>
+          <TouchableOpacity
+            style={[styles.modalButton, { backgroundColor: theme.accent, paddingVertical: 10 }]}
+            onPress={() => router.push('/scanner')}
+            activeOpacity={0.85}
+          >
+            <Icon name="wifi" size={17} color="#ffffff" />
+            <Text style={[styles.modalButtonText, { color: '#ffffff', marginLeft: 8 }]}>Scan Bridge QR Code</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
         <View style={[styles.activeWsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.activeWsHeader}>
             <View style={styles.wsLabelRow}>
@@ -649,7 +668,7 @@ function ChatEmptyState({
         </View>
       )}
 
-      {otherProfiles.length > 0 && (
+      {profile && otherProfiles.length > 0 && (
         <View style={styles.switchSection}>
           <Text style={[styles.sectionEyebrow, { color: theme.muted }]}>
             SWITCH WORKSPACE
@@ -678,29 +697,31 @@ function ChatEmptyState({
         </View>
       )}
 
-      <View style={styles.startersSection}>
-        <Text style={[styles.sectionEyebrow, { color: theme.muted }]}>
-          QUICK ACTIONS
-        </Text>
-        <View style={styles.starterGrid}>
-          {quickPrompts.map((item, idx) => (
-            <TouchableOpacity
-              key={`qp-${idx}`}
-              style={[
-                styles.starterPill,
-                { backgroundColor: theme.surface, borderColor: theme.border }
-              ]}
-              onPress={() => onSelectPrompt(item.prompt)}
-              activeOpacity={0.7}
-            >
-              <Icon name={item.icon} size={15} color={theme.accent} />
-              <Text style={[styles.starterText, { color: theme.text }]}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {profile && (
+        <View style={styles.startersSection}>
+          <Text style={[styles.sectionEyebrow, { color: theme.muted }]}>
+            QUICK ACTIONS
+          </Text>
+          <View style={styles.starterGrid}>
+            {quickPrompts.map((item, idx) => (
+              <TouchableOpacity
+                key={`qp-${idx}`}
+                style={[
+                  styles.starterPill,
+                  { backgroundColor: theme.surface, borderColor: theme.border }
+                ]}
+                onPress={() => onSelectPrompt(item.prompt)}
+                activeOpacity={0.7}
+              >
+                <Icon name={item.icon} size={15} color={theme.accent} />
+                <Text style={[styles.starterText, { color: theme.text }]}>
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }

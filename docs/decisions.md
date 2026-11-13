@@ -378,6 +378,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Tapping any cached conversation navigates to the Chat tab and displays that conversation's cached history.
   - Added a `CACHED` badge on the Conversations section when the laptop is unreachable, and disabled new conversation creation with a clear warning alert.
 
+## 2026-11-13: Production Readiness, Zero-Cost Standalone Setup & First-Run Onboarding
+- **Purge Remaining Hardcoded Dev Fallbacks:**
+  - Removed lingering fallback IP address (`100.69.62.84:48123`) from `NotificationModal.js`, ensuring all displays dynamically derive target hostname from the active profile or cleanly show `Not connected`.
+- **First-Launch Mobile Onboarding Experience:**
+  - In `HomeScreen` (`index.js`), added dedicated `OnboardingCard` displayed when no bridge profiles are configured. Guides first-time users through the 3-step setup (launch Antigravity, click status bar, scan QR) and provides a prominent 1-tap "Scan Bridge QR Code" button routing to `/scanner`.
+  - In `ChatEmptyState` (`chat.js`), replaced generic offline/starter prompts when `!profile` with a clean Antigravity connection card and 1-tap pairing launcher.
+- **Standalone APK & Distribution Configuration:**
+  - Created `apps/mobile/eas.json` configuring EAS build profiles (`preview` and `production`) with `"buildType": "apk"` for direct standalone Android installation without requiring Metro dev servers.
+  - Updated `README.md` quickstart to reflect the standalone native mobile app workflow, pairing QR code workflow, and zero-cloud architecture.
+
+
 
 
 

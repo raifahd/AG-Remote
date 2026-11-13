@@ -195,6 +195,41 @@ export default function HomeScreen() {
           />
         </TouchableOpacity>
 
+        {!profile && (
+          <View style={[styles.onboardCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <View style={styles.onboardHeader}>
+              <View style={[styles.onboardIconCircle, { backgroundColor: `${theme.accent}20` }]}>
+                <Icon name="wifi" size={22} color={theme.accent} />
+              </View>
+              <View style={styles.onboardHeaderText}>
+                <Text style={[styles.onboardTitle, { color: theme.text }]}>Pair with Antigravity</Text>
+                <Text style={[styles.onboardSub, { color: theme.muted }]}>
+                  Connect your phone to your computer over Tailscale.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.onboardSteps}>
+              <Text style={[styles.onboardStepText, { color: theme.subtle }]}>
+                1. Open Antigravity on your computer
+              </Text>
+              <Text style={[styles.onboardStepText, { color: theme.subtle }]}>
+                2. Click "AG Remote" in the bottom status bar
+              </Text>
+              <Text style={[styles.onboardStepText, { color: theme.subtle }]}>
+                3. Scan the QR code displayed on screen
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.onboardButton, { backgroundColor: theme.accent }]}
+              onPress={() => router.push('/scanner')}
+              activeOpacity={0.85}
+            >
+              <Icon name="wifi" size={17} color="#ffffff" />
+              <Text style={styles.onboardButtonText}>Scan Bridge QR Code</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.agentState}>
           <View style={styles.orbWrap}>
             <Animated.View
@@ -681,5 +716,60 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: fontRegular,
     marginTop: 2
+  },
+  onboardCard: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginBottom: 16
+  },
+  onboardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12
+  },
+  onboardIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  onboardHeaderText: {
+    flex: 1
+  },
+  onboardTitle: {
+    fontSize: 15,
+    fontFamily: fontBold,
+    letterSpacing: -0.3
+  },
+  onboardSub: {
+    fontSize: 12,
+    fontFamily: fontRegular,
+    marginTop: 2,
+    lineHeight: 16
+  },
+  onboardSteps: {
+    gap: 4,
+    marginBottom: 14,
+    paddingLeft: 4
+  },
+  onboardStepText: {
+    fontSize: 12,
+    fontFamily: fontMedium
+  },
+  onboardButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    borderRadius: 12,
+    gap: 8
+  },
+  onboardButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontFamily: fontSemiBold
   }
 });

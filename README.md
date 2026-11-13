@@ -33,9 +33,7 @@ Host PC (Debian 13 or Windows 11)
 - **Remote Prompting & Instant Cancellation**: Send new prompts to your active Antigravity Cascade session or halt ongoing generation via the white circular stop button.
 - **Live Chat with Markdown & Auto-Scroll**: Real-time conversational view featuring syntax-highlighted code blocks, bold/italics, bulleted lists, and intelligent viewport auto-scrolling.
 - **Zero Cloud Costs**: Connects via Tailscale's WireGuard mesh (`100.64.0.0/10`) and delivers free background push notifications through public or self-hosted `ntfy.sh`.
-- **Dual Client Access**:
-  - **Standalone Web App**: Accessible at `http://<tailscale-ip>:48123/app` from any mobile browser with no app store install needed.
-  - **Expo Go App**: Native Android app built on Expo SDK 58 with multi-profile support (Debian and Windows dual-boot setups), QR code pairing, and local credential storage.
+- **Standalone Mobile App**: Native mobile app built on React Native & Expo with multi-profile support (Debian and Windows dual-boot setups), instant QR code pairing, and local encrypted hardware credential storage.
 - **Non-Disturbing Quiet Hours**: Mutes non-urgent run-finished alerts during customizable hours (default: 23:00 to 07:00) while ensuring critical approval requests always wake your device.
 
 ---
@@ -51,9 +49,9 @@ Host PC (Debian 13 or Windows 11)
 Verify your host has a Tailscale IPv4 address:
 ```bash
 tailscale ip -4
-# Example output: 100.69.62.84
+# Example output: 100.x.y.z
 ```
-Ensure Tailscale is connected on your mobile phone.
+Ensure Tailscale is connected on your mobile phone under the same Tailscale network.
 
 ### 3. Launching Antigravity IDE
 To enable remote communication, Antigravity IDE should be started with the remote debugging port enabled:
@@ -75,26 +73,18 @@ The console will print your Tailscale URL, bearer token, and ntfy topic:
 ```
 -----------------------------------------------------------------
 AG Remote Bridge is RUNNING!
-Open on Phone: http://100.69.62.84:48123/app?token=<64-char-hex-secret>
-ntfy Topic:    agremote_<hex-topic>
+Bridge API:      http://<your-tailscale-ip>:48123
+ntfy Topic:      agremote_<hex-topic>
 -----------------------------------------------------------------
 ```
+Or in the Antigravity IDE extension, click **"AG Remote"** in the status bar (or press `Ctrl+Shift+P` and run `AG Remote: Show Pairing QR`).
 
 ### 5. Connecting from Your Phone
 
-#### Option A: Web App (Instant)
-Open the URL printed in the terminal on your phone's mobile browser:
-```
-http://<your-tailscale-ip>:48123/app?token=<your-token>
-```
-
-#### Option B: Expo Go Mobile App
-1. Install **Expo Go** on your Android device from Google Play.
-2. Launch the mobile development packager:
-   - **Linux**: `./scripts/start-mobile.sh`
-   - **Windows**: `.\scripts\start-mobile.ps1`
-3. Scan the terminal QR code or open `exp://<your-tailscale-ip>:8081` in Expo Go.
-4. In the **Bridges** tab, tap **+ Add** and input your bridge URL, token, and ntfy topic.
+1. Open the **AG Remote** app on your phone (standalone APK or via Expo Go).
+2. Tap **Scan Bridge QR Code** (or open the **Scanner** tab).
+3. Point your camera at the QR code displayed by Antigravity on your PC screen.
+4. Your phone is immediately paired and ready to monitor runs, stream thoughts and tool executions, approve commands, and submit prompts.
 
 ---
 
