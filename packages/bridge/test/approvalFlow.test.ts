@@ -77,13 +77,9 @@ describe('Phase 3 Approvals Flow', () => {
     });
   }
 
-  it('serves the mobile web approval app at /app without token requirement', async () => {
+  it('does not expose obsolete web app endpoint at /app', async () => {
     const res = await api('GET', '/app');
-    expect(res.status).toBe(200);
-    expect(typeof res.data).toBe('string');
-    expect(res.data).toContain('<title>AG Remote</title>');
-    expect(res.data).toContain('id="approvalCard"');
-    expect(res.data).toContain('id="approveBtn"');
+    expect(res.status).toBe(404);
   });
 
   it('exercises full terminal command approval loop over API', async () => {

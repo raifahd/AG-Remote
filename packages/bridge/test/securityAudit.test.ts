@@ -161,7 +161,7 @@ describe('Phase 7 Security Audit (Section 9 Compliance)', () => {
       expect(received).toHaveLength(1);
       const post = received[0];
       expect(post?.body).not.toContain(validToken);
-      expect(post?.headers['click']).toBe('http://100.69.62.84:48123/app');
+      expect(post?.headers['click']).toBe('exp://100.69.62.84:8081/--/(tabs)/chat');
     } finally {
       await new Promise<void>((resolve) => mockServer.close(() => resolve()));
     }

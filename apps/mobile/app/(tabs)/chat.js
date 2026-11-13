@@ -1063,15 +1063,6 @@ export default function ChatScreen() {
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
   const isKeyboardOpenRef = useRef(false);
 
-  useEffect(() => {
-    if (params?.sessionId && params.sessionId !== currentSessionId) {
-      setCurrentSessionId(params.sessionId);
-      if (params.sessionTitle) {
-        setCurrentSessionTitle(params.sessionTitle);
-      }
-    }
-  }, [params?.sessionId, params?.sessionTitle]);
-
   const reversedMessages = useMemo(() => {
     return messages && messages.length > 0 ? [...messages].reverse() : [];
   }, [messages]);
@@ -1191,6 +1182,16 @@ export default function ChatScreen() {
       loadMessages();
     }, [loadMessages])
   );
+
+  useEffect(() => {
+    if (params?.sessionId && params.sessionId !== currentSessionId) {
+      setCurrentSessionId(params.sessionId);
+      if (params.sessionTitle) {
+        setCurrentSessionTitle(params.sessionTitle);
+      }
+      loadMessages(params.sessionId);
+    }
+  }, [params?.sessionId, params?.sessionTitle, loadMessages]);
 
   useEffect(() => {
     if (!profile) return;

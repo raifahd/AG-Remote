@@ -44,8 +44,10 @@ async function main() {
   await server.start();
   console.log("-----------------------------------------------------------------");
   console.log("AG Remote Bridge is RUNNING!");
-  console.log(`Open on Phone: http://${tailscaleIp}:48123/app?token=${token}`);
-  console.log(`ntfy Topic:    ${topic}`);
+  console.log(`Bridge API:      http://${tailscaleIp}:48123`);
+  console.log(`Expo Go Link:    exp://${tailscaleIp}:8081/--/(tabs)/chat`);
+  console.log(`Standalone App:  ag-remote://(tabs)/chat`);
+  console.log(`ntfy Topic:      ${topic}`);
   console.log("-----------------------------------------------------------------");
 }
 

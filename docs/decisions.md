@@ -328,5 +328,19 @@ Record of decisions, discoveries, and rationale for AG Remote.
     - Letter-spaced "AG REMOTE" typography and "ANTIGRAVITY COMPANION" spectrum badge.
     - Dynamic telemetry pill with pulsing green beacon dot, live status transitions ("INITIALIZING ENGINE" -> "AGENT CORE READY"), and animated progress bar track.
 
+## 2026-11-13: Push Notification Direct Mobile Deep-Linking & Web App Removal
+- **Deprecation and Removal of Web Client (`/app`):**
+  - Removed `webApp.ts` and the `/app` and `/app/*` HTTP routes from `BridgeServer`.
+  - The standalone React Native mobile app now fully services multi-session chat, approvals, and terminal execution, rendering the temporary web fallback obsolete.
+- **Direct Mobile Deep Linking in Push Notifications:**
+  - Updated `NtfyNotifier` to generate mobile deep links with `sessionId` scoping:
+    - **Expo Go (Current)**: `exp://<tailscaleIp>:8081/--/(tabs)/chat?sessionId=<sessionId>`
+    - **Standalone APK**: `ag-remote://(tabs)/chat?sessionId=<sessionId>`
+  - Primary `Click` header points directly to the active client target (defaulting to Expo Go in development).
+  - Attached ntfy `Actions` providing 1-tap buttons for both Expo Go and Standalone APK, eliminating web browser fallbacks completely.
+  - Forwarded `sessionId` through `notifyApprovalRequested` and `notifyRunFinished`.
+- **Mobile Chat Auto-Loading on Deep-Link:**
+  - In `apps/mobile/app/(tabs)/chat.js`, added immediate invocation of `loadMessages(params.sessionId)` when receiving deep-link parameters, ensuring that tapping a notification immediately switches to and displays that specific conversation's message history.
+
 
 

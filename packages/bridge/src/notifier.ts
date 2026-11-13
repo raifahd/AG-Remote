@@ -4,11 +4,15 @@ import crypto from 'crypto';
 import os from 'os';
 import { SecretStore } from './auth.js';
 
+export type ClientTarget = 'expo' | 'standalone';
+
 export interface NotifierConfig {
   topic?: string;
   serverUrl?: string;
   tailscaleIp?: string | null;
   hostLabel?: string;
+  clientTarget?: ClientTarget;
+  metroPort?: number;
   quietHoursEnabled?: boolean;
   quietHoursStart?: number;
   quietHoursEnd?: number;
@@ -17,9 +21,11 @@ export interface NotifierConfig {
 export interface PushOptions {
   title: string;
   message: string;
-  priority?: number;
-  tags?: string[];
-  clickUrl?: string;
+  priority?: number | undefined;
+  tags?: string[] | undefined;
+  clickUrl?: string | undefined;
+  sessionId?: string | undefined;
+  actions?: string[] | undefined;
 }
 
 export class NtfyNotifier {
@@ -28,6 +34,8 @@ export class NtfyNotifier {
   private topic: string | null = null;
   private tailscaleIp: string | null = null;
   private hostLabel: string;
+  private clientTarget: ClientTarget = 'expo';
+  private metroPort = 8081;
   private quietHoursEnabled = false;
   private quietHoursStart = 23;
   private quietHoursEnd = 7;
@@ -37,6 +45,12 @@ export class NtfyNotifier {
     this.serverUrl = (config.serverUrl ?? 'https://ntfy.sh').replace(/\/+$/, '');
     this.tailscaleIp = config.tailscaleIp ?? null;
     this.hostLabel = config.hostLabel ?? os.hostname();
+    if (config.clientTarget) {
+      this.clientTarget = config.clientTarget;
+    }
+    if (config.metroPort) {
+      this.metroPort = config.metroPort;
+    }
     if (config.topic) {
       this.topic = config.topic;
     }
@@ -79,6 +93,22 @@ export class NtfyNotifier {
     this.hostLabel = label;
   }
 
+  setClientTarget(target: ClientTarget): void {
+    this.clientTarget = target;
+  }
+
+  getClientTarget(): ClientTarget {
+    return this.clientTarget;
+  }
+
+  setMetroPort(port: number): void {
+    this.metroPort = port;
+  }
+
+  getMetroPort(): number {
+    return this.metroPort;
+  }
+
   setQuietHours(enabled: boolean, start = 23, end = 7): void {
     this.quietHoursEnabled = enabled;
     this.quietHoursStart = start;
@@ -104,11 +134,33 @@ export class NtfyNotifier {
     return hour >= this.quietHoursStart && hour < this.quietHoursEnd;
   }
 
+  buildDeepLink(target: ClientTarget, sessionId?: string): string {
+    const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+    if (target === 'standalone') {
+      return `ag-remote://(tabs)/chat${query}`;
+    }
+    const host = this.tailscaleIp || '127.0.0.1';
+    return `exp://${host}:${this.metroPort}/--/(tabs)/chat${query}`;
+  }
+
   async sendNotification(options: PushOptions): Promise<boolean> {
     const topic = await this.getOrCreateTopic();
     const url = new URL(`${this.serverUrl}/${topic}`);
 
-    const clickUrl = options.clickUrl ?? (this.tailscaleIp ? `http://${this.tailscaleIp}:48123/app` : undefined);
+    const expoLink = this.buildDeepLink('expo', options.sessionId);
+    const standaloneLink = this.buildDeepLink('standalone', options.sessionId);
+
+    const clickUrl = options.clickUrl ?? (
+      this.clientTarget === 'standalone' ? standaloneLink : expoLink
+    );
+
+    const defaultActions = this.clientTarget === 'standalone'
+      ? `view, Open in Standalone APK, ${standaloneLink}, clear=true; view, Open in Expo Go, ${expoLink}, clear=true`
+      : `view, Open in Expo Go, ${expoLink}, clear=true; view, Open in Standalone APK, ${standaloneLink}, clear=true`;
+
+    const actionsHeader = options.actions && options.actions.length > 0
+      ? options.actions.join('; ')
+      : defaultActions;
 
     const headers: Record<string, string> = {
       'Content-Type': 'text/plain; charset=utf-8',
@@ -121,6 +173,9 @@ export class NtfyNotifier {
     }
     if (clickUrl) {
       headers['Click'] = clickUrl;
+    }
+    if (actionsHeader) {
+      headers['Actions'] = actionsHeader;
     }
 
     return new Promise((resolve) => {
@@ -155,11 +210,12 @@ export class NtfyNotifier {
       title: `[${this.hostLabel}] Run Finished`,
       message: `Agent finished execution for ${desc}`,
       priority: 3,
-      tags: ['white_check_mark']
+      tags: ['white_check_mark'],
+      sessionId
     });
   }
 
-  async notifyApprovalRequested(kind: string, summary: string, _sessionId?: string, sessionTitle?: string): Promise<boolean> {
+  async notifyApprovalRequested(kind: string, summary: string, sessionId?: string, sessionTitle?: string): Promise<boolean> {
     const safeSummary = summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
     const titlePrefix = sessionTitle
       ? `[${this.hostLabel}] Approval: ${sessionTitle}`
@@ -168,7 +224,8 @@ export class NtfyNotifier {
       title: titlePrefix,
       message: safeSummary,
       priority: 4,
-      tags: ['warning', 'bell']
+      tags: ['warning', 'bell'],
+      sessionId
     });
   }
 

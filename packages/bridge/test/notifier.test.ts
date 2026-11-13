@@ -60,7 +60,10 @@ describe('NtfyNotifier', () => {
 
     const req = receivedRequests[0];
     expect(req?.headers['title']).toBe('[laptop-deb] Run Finished');
-    expect(req?.headers['click']).toBe('http://100.69.62.84:48123/app');
+    expect(req?.headers['click']).toBe('exp://100.69.62.84:8081/--/(tabs)/chat?sessionId=sess-1234567890');
+    expect(req?.headers['actions']).toContain('Open in Expo Go');
+    expect(req?.headers['actions']).toContain('Open in Standalone APK');
+    expect(req?.headers['actions']).toContain('ag-remote://(tabs)/chat?sessionId=sess-1234567890');
     expect(req?.headers['priority']).toBe('3');
     expect(req?.body).toContain('sess-1234');
   });
@@ -122,6 +125,26 @@ describe('NtfyNotifier', () => {
       startHour: 21,
       endHour: 6
     });
+  });
+
+  it('generates standalone APK deep links when clientTarget is set to standalone', async () => {
+    receivedRequests = [];
+    const store = new FileSecretStore(tokenFile);
+    const notifier = new NtfyNotifier(store, {
+      serverUrl: `http://127.0.0.1:${mockPort}`,
+      tailscaleIp: '100.69.62.84',
+      hostLabel: 'laptop-deb',
+      clientTarget: 'standalone'
+    });
+
+    const success = await notifier.notifyApprovalRequested('terminal', 'Execute rm -rf /tmp/test', 'sess-standalone-1');
+    expect(success).toBe(true);
+    expect(receivedRequests).toHaveLength(1);
+
+    const req = receivedRequests[0];
+    expect(req?.headers['click']).toBe('ag-remote://(tabs)/chat?sessionId=sess-standalone-1');
+    expect(req?.headers['actions']).toContain('Open in Standalone APK');
+    expect(req?.headers['actions']).toContain('ag-remote://(tabs)/chat?sessionId=sess-standalone-1');
   });
 });
 

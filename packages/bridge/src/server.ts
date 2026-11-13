@@ -19,7 +19,6 @@ import {
 import { RateLimiter, TokenManager, constantTimeCompare } from './auth.js';
 import { AgentAdapter } from './adapters/AgentAdapter.js';
 import { NtfyNotifier } from './notifier.js';
-import { renderWebClientHtml } from './webApp.js';
 
 export interface ServerConfig {
   port: number;
@@ -65,11 +64,6 @@ export class BridgeServer {
 
     this.app.get('/health', (_req: Request, res: Response) => {
       res.json(this.buildHealthResponse());
-    });
-
-    this.app.get(['/app', '/app/*'], (_req: Request, res: Response) => {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(renderWebClientHtml());
     });
 
     const v1Router = express.Router();
