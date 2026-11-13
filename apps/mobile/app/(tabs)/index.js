@@ -442,6 +442,13 @@ const fontSemiBold = Platform.select({
   default: 'System'
 });
 
+const fontMedium = Platform.select({
+  ios: 'Poppins-Medium',
+  android: 'Poppins_500Medium',
+  web: 'Poppins, sans-serif',
+  default: 'System'
+});
+
 const styles = StyleSheet.create({
   root: {
     flex: 1
