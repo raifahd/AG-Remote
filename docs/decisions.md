@@ -360,6 +360,19 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Reduced active polling intervals from 1800ms down to 400ms while generating, paired with instant optimistic user message rendering and real-time WebSocket state notifications.
   - Added collapsible `ThoughtAccordion` with brain icon for deep agent reasoning, and expandable `ToolStepCard` for terminal and file tool actions.
 
+## 2026-11-13: Offline Local Device Chat & Session Caching
+- **Local Storage Abstraction (`storage.js`):**
+  - Added `saveCachedSessions(sessions, profileId)` and `getCachedSessions(profileId)`.
+  - Added `saveCachedMessages(sessionId, messages)` and `getCachedMessages(sessionId)` using on-device encrypted storage (`expo-secure-store` / `localStorage`).
+  - Limits cached message storage per session to the latest 100 entries to maintain rapid load performance and prevent excessive storage utilization.
+- **Instant Pre-load & Seamless Offline Access:**
+  - In `loadMessages`, immediately reads cached sessions and cached conversation messages from local phone storage before network queries resolve, delivering instant instantaneous rendering.
+  - In `handleSwitchSession`, instantly populates the message feed with that session's cached messages while the network request dispatches.
+  - If the laptop is shut down or unreachable, the app gracefully maintains the cached conversations, allowing full browsing, history reading, and modal conversation switching completely offline.
+- **Offline Telemetry & Composer Guards:**
+  - Added `isOffline` detection. When offline and WebSocket is disconnected, `TopBar` displays `OFFLINE (CACHED)`, a persistent warning banner states `Viewing offline cached history · Laptop is currently unreachable`, and the prompt composer disables sending with placeholder `Laptop offline (viewing cached chat)`.
+
+
 
 
 

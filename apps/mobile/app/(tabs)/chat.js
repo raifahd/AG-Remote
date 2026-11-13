@@ -22,7 +22,15 @@ import { useTheme, CHAT_FONT_SIZES } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
 import StatusBadge from '../../src/components/StatusBadge.js';
-import { getActiveProfile, getProfiles, setActiveProfileId } from '../../src/storage.js';
+import {
+  getActiveProfile,
+  getProfiles,
+  setActiveProfileId,
+  getCachedSessions,
+  saveCachedSessions,
+  getCachedMessages,
+  saveCachedMessages
+} from '../../src/storage.js';
 import {
   fetchMessages,
   fetchState,
@@ -593,7 +601,8 @@ function ChatEmptyState({
   allProfiles,
   onSwitchWorkspace,
   onSelectPrompt,
-  theme
+  theme,
+  isOffline
 }) {
   const otherProfiles = allProfiles.filter((p) => p.id !== profile?.id);
   const quickPrompts = [
@@ -614,20 +623,24 @@ function ChatEmptyState({
 
       <Text style={[styles.emptyHeading, { color: theme.text }]}>Antigravity Remote</Text>
       <Text style={[styles.emptySub, { color: theme.muted }]}>
-        Connected to your remote workspace. Send a message to start.
+        {isOffline
+          ? 'Laptop is currently offline. You can browse cached conversations from the selector above.'
+          : 'Connected to your remote workspace. Send a message to start.'}
       </Text>
 
       {profile && (
         <View style={[styles.activeWsCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <View style={styles.activeWsHeader}>
             <View style={styles.wsLabelRow}>
-              <View style={[styles.activeDot, { backgroundColor: theme.success }]} />
+              <View style={[styles.activeDot, { backgroundColor: isOffline ? theme.muted : theme.success }]} />
               <Text style={[styles.wsTitle, { color: theme.text }]} numberOfLines={1}>
                 {profile.name}
               </Text>
             </View>
-            <View style={[styles.onlinePill, { backgroundColor: `${theme.success}20` }]}>
-              <Text style={[styles.onlinePillText, { color: theme.success }]}>ACTIVE</Text>
+            <View style={[styles.onlinePill, { backgroundColor: isOffline ? `${theme.muted}20` : `${theme.success}20` }]}>
+              <Text style={[styles.onlinePillText, { color: isOffline ? theme.muted : theme.success }]}>
+                {isOffline ? 'OFFLINE' : 'ACTIVE'}
+              </Text>
             </View>
           </View>
           <Text style={[styles.wsHost, { color: theme.muted }]} numberOfLines={1}>
@@ -1090,6 +1103,7 @@ export default function ChatScreen() {
   const [sendingStatus, setSendingStatus] = useState('');
   const [agentStatus, setAgentStatus] = useState('idle');
   const [wsConnected, setWsConnected] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const [blinker, setBlinker] = useState(true);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
@@ -1196,67 +1210,102 @@ export default function ChatScreen() {
       ]);
       setProfile(active);
       setAllProfiles(profilesList || []);
+
+      const cachedSess = await getCachedSessions(active?.id);
+      if (cachedSess && cachedSess.length > 0) {
+        setSessions(cachedSess);
+      }
+
+      const sid = targetSessionId !== undefined ? targetSessionId : currentSessionId;
+      const initialSid = sid || (cachedSess && cachedSess[0]?.id) || null;
+      if (initialSid) {
+        const cachedMsgs = await getCachedMessages(initialSid);
+        if (cachedMsgs && cachedMsgs.length > 0) {
+          setMessages(cachedMsgs);
+        }
+        if (initialSid !== currentSessionId) {
+          setCurrentSessionId(initialSid);
+        }
+        const found = (cachedSess || []).find((s) => s.id === initialSid);
+        if (found) {
+          setCurrentSessionTitle(found.title || 'Untitled');
+        }
+      }
+
       if (active) {
-        const [sessList, st] = await Promise.all([
-          fetchSessions(active).catch(() => []),
-          fetchState(active).catch(() => null)
-        ]);
-        if (sessList) {
-          setSessions(sessList);
-          const map = {};
-          const actMap = {};
-          const thMap = {};
-          sessList.forEach((s) => {
-            if (s?.id) {
-              if (s.status) map[s.id] = s.status;
-              if (s.action) actMap[s.id] = s.action;
-              if (s.thinking) thMap[s.id] = s.thinking;
+        let isOnline = false;
+        try {
+          const [sessList, st] = await Promise.all([
+            fetchSessions(active),
+            fetchState(active)
+          ]);
+          isOnline = true;
+          if (sessList && Array.isArray(sessList) && sessList.length > 0) {
+            setSessions(sessList);
+            saveCachedSessions(sessList, active.id);
+            const map = {};
+            const actMap = {};
+            const thMap = {};
+            sessList.forEach((s) => {
+              if (s?.id) {
+                if (s.status) map[s.id] = s.status;
+                if (s.action) actMap[s.id] = s.action;
+                if (s.thinking) thMap[s.id] = s.thinking;
+              }
+            });
+            setSessionStatuses((prev) => ({ ...prev, ...map }));
+            setSessionActions((prev) => ({ ...prev, ...actMap }));
+            setSessionThoughts((prev) => ({ ...prev, ...thMap }));
+          }
+
+          const liveResolvedSid = targetSessionId !== undefined
+            ? targetSessionId
+            : (currentSessionId || st?.activeSessionId || (sessList && sessList[0]?.id) || initialSid);
+
+          if (liveResolvedSid && liveResolvedSid !== currentSessionId) {
+            setCurrentSessionId(liveResolvedSid);
+          }
+
+          if (liveResolvedSid && sessList) {
+            const found = sessList.find((s) => s.id === liveResolvedSid);
+            if (found) {
+              setCurrentSessionTitle(found.title || 'Untitled');
             }
-          });
-          setSessionStatuses((prev) => ({ ...prev, ...map }));
-          setSessionActions((prev) => ({ ...prev, ...actMap }));
-          setSessionThoughts((prev) => ({ ...prev, ...thMap }));
-        }
-
-        const sid = targetSessionId !== undefined ? targetSessionId : currentSessionId;
-        const resolvedSid = sid || st?.activeSessionId || (sessList && sessList[0]?.id) || null;
-        if (resolvedSid && resolvedSid !== currentSessionId) {
-          setCurrentSessionId(resolvedSid);
-        }
-
-        if (resolvedSid && sessList) {
-          const found = sessList.find((s) => s.id === resolvedSid);
-          if (found) {
-            setCurrentSessionTitle(found.title || 'Untitled');
           }
-        }
 
-        const [list, modelData] = await Promise.all([
-          fetchMessages(active, 50, resolvedSid || undefined).catch(() => []),
-          fetchModels(active, resolvedSid || undefined).catch(() => null)
-        ]);
-        if (list) {
-          setMessages(list);
-          const lastUser = [...list].reverse().find((m) => m.role === 'user');
-          if (lastUser?.timestamp && resolvedSid) {
-            setSessionWorkingStartedAt((prev) => ({
-              ...prev,
-              [resolvedSid]: prev[resolvedSid] || lastUser.timestamp
-            }));
+          const [list, modelData] = await Promise.all([
+            fetchMessages(active, 50, liveResolvedSid || undefined).catch(() => null),
+            fetchModels(active, liveResolvedSid || undefined).catch(() => null)
+          ]);
+          if (list && Array.isArray(list)) {
+            setMessages(list);
+            if (liveResolvedSid) {
+              saveCachedMessages(liveResolvedSid, list);
+            }
+            const lastUser = [...list].reverse().find((m) => m.role === 'user');
+            if (lastUser?.timestamp && liveResolvedSid) {
+              setSessionWorkingStartedAt((prev) => ({
+                ...prev,
+                [liveResolvedSid]: prev[liveResolvedSid] || lastUser.timestamp
+              }));
+            }
           }
-        }
-        if (st?.status && (!resolvedSid || resolvedSid === st.activeSessionId)) {
-          setAgentStatus(st.status);
-        }
-        if (modelData?.models) {
-          setAvailableModels(modelData.models);
-          const cur = modelData.models.find((m) => m.isCurrent) ||
-            modelData.models.find((m) => m.id === modelData.currentModelId) ||
-            modelData.models[0];
-          if (cur) {
-            setSelectedModel(cur);
+          if (st?.status && (!liveResolvedSid || liveResolvedSid === st.activeSessionId)) {
+            setAgentStatus(st.status);
           }
+          if (modelData?.models) {
+            setAvailableModels(modelData.models);
+            const cur = modelData.models.find((m) => m.isCurrent) ||
+              modelData.models.find((m) => m.id === modelData.currentModelId) ||
+              modelData.models[0];
+            if (cur) {
+              setSelectedModel(cur);
+            }
+          }
+        } catch {
+          isOnline = false;
         }
+        setIsOffline(!isOnline);
       }
     } catch {}
   }, [currentSessionId]);
@@ -1337,6 +1386,9 @@ export default function ChatScreen() {
       },
       (connected) => {
         setWsConnected(connected);
+        if (connected) {
+          setIsOffline(false);
+        }
       }
     );
     return () => ws.close();
@@ -1350,6 +1402,10 @@ export default function ChatScreen() {
       fetchMessages(profile, 50, sid)
         .then((list) => {
           if (list && list.length > 0) {
+            if (sid) {
+              saveCachedMessages(sid, list);
+            }
+            setIsOffline(false);
             setMessages((prev) => {
               if (
                 list.length !== prev.length ||
@@ -1362,7 +1418,11 @@ export default function ChatScreen() {
             });
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!wsConnected) {
+            setIsOffline(true);
+          }
+        });
       fetchState(profile)
         .then((st) => {
           if (st?.status && (!currentSessionId || currentSessionId === st.activeSessionId)) {
@@ -1372,7 +1432,7 @@ export default function ChatScreen() {
         .catch(() => {});
     }, intervalMs);
     return () => clearInterval(pollTimer);
-  }, [profile, currentSessionId, isWorking]);
+  }, [profile, currentSessionId, isWorking, wsConnected]);
 
   const scrollToBottom = () => {
     if (messages && messages.length > 0) {
@@ -1381,16 +1441,21 @@ export default function ChatScreen() {
   };
 
   const handleSwitchSession = async (session) => {
-    if (!profile) return;
     setCurrentSessionId(session.id);
     setCurrentSessionTitle(session.title || 'Untitled');
     setSessionsModalVisible(false);
     const targetStatus = sessionStatuses[session.id] || session.status || 'idle';
     setAgentStatus(targetStatus);
-    try {
-      await focusSession(profile, session.id);
-    } catch {}
-    await loadMessages(session.id);
+    const cached = await getCachedMessages(session.id);
+    if (cached && cached.length > 0) {
+      setMessages(cached);
+    }
+    if (profile) {
+      try {
+        await focusSession(profile, session.id);
+      } catch {}
+      await loadMessages(session.id);
+    }
     setTimeout(scrollToBottom, 60);
   };
 
@@ -1603,7 +1668,7 @@ export default function ChatScreen() {
 
   const statusLabel = wsConnected
     ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
-    : `${(profile?.name || 'LAPTOP').toUpperCase()}`;
+    : (isOffline ? `OFFLINE (CACHED)` : `${(profile?.name || 'LAPTOP').toUpperCase()}`);
 
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
@@ -1631,6 +1696,15 @@ export default function ChatScreen() {
           <Text style={[styles.newSessionBtnText, { color: theme.accent }]}>New</Text>
         </TouchableOpacity>
       </View>
+
+      {isOffline && !wsConnected && (
+        <View style={[styles.offlineBanner, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.15)', borderBottomColor: `${theme.warn}40` }]}>
+          <Icon name="shield" size={13} color={theme.warn} />
+          <Text style={[styles.offlineBannerText, { color: theme.warn }]}>
+            Viewing offline cached history · Laptop is currently unreachable
+          </Text>
+        </View>
+      )}
 
       <View style={[styles.chatBody, { backgroundColor: theme.bg }]}>
         <FlatList
@@ -1678,6 +1752,9 @@ export default function ChatScreen() {
               onSwitchWorkspace={handleSwitchWorkspace}
               onSelectPrompt={handleSelectPrompt}
               theme={theme}
+              isOffline={isOffline && !wsConnected}
+            />
+          }
             />
           }
         />
@@ -1841,13 +1918,17 @@ export default function ChatScreen() {
                 textAlignVertical: 'center'
               }
             ]}
-            placeholder={isWorking ? 'Give follow-up prompt...' : 'Message your agent'}
+            placeholder={
+              isOffline && !wsConnected
+                ? 'Laptop offline (viewing cached chat)'
+                : (isWorking ? 'Give follow-up prompt...' : 'Message your agent')
+            }
             placeholderTextColor={theme.subtle}
             value={inputText}
             onChangeText={setInputText}
             multiline
             maxLength={2000}
-            editable={!sending}
+            editable={!sending && (!isOffline || wsConnected)}
             onFocus={() => {
               setTimeout(scrollToBottom, 150);
             }}
@@ -1868,16 +1949,16 @@ export default function ChatScreen() {
                 styles.composerBtn,
                 isWorking ? styles.sendBtnWorking : styles.sendBtnIdle,
                 {
-                  backgroundColor: canSend
+                  backgroundColor: canSend && (!isOffline || wsConnected)
                     ? theme.accent
                     : (isWorking
                         ? (theme.mode === 'dark' ? '#383838' : '#e4e4e7')
                         : `${theme.accent}65`),
-                  opacity: canSend ? 1 : (isWorking ? 0.45 : 0.6)
+                  opacity: canSend && (!isOffline || wsConnected) ? 1 : (isWorking ? 0.45 : 0.6)
                 }
               ]}
               onPress={handleSend}
-              disabled={!canSend}
+              disabled={!canSend || (isOffline && !wsConnected)}
               activeOpacity={0.8}
             >
               {sending ? (
@@ -2906,6 +2987,22 @@ const styles = StyleSheet.create({
   starterText: {
     fontSize: 12,
     fontFamily: fontMedium
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1
+  },
+  offlineBannerText: {
+    fontSize: 11,
+    fontFamily: fontMedium,
+    flex: 1
   },
   sessionBar: {
     flexDirection: 'row',

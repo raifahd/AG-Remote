@@ -124,3 +124,49 @@ export async function saveChatFontSize(size) {
   await setItem(CHAT_FONT_SIZE_KEY, size);
 }
 
+const SESSIONS_CACHE_PREFIX = 'ag_remote_cached_sessions_';
+const MESSAGES_CACHE_PREFIX = 'ag_remote_cached_msgs_';
+
+export async function getCachedSessions(profileId) {
+  try {
+    const key = `${SESSIONS_CACHE_PREFIX}${profileId || 'default'}`;
+    const raw = await getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCachedSessions(sessions, profileId) {
+  try {
+    if (!Array.isArray(sessions)) return;
+    const key = `${SESSIONS_CACHE_PREFIX}${profileId || 'default'}`;
+    await setItem(key, JSON.stringify(sessions));
+  } catch {}
+}
+
+export async function getCachedMessages(sessionId) {
+  try {
+    if (!sessionId) return [];
+    const key = `${MESSAGES_CACHE_PREFIX}${sessionId}`;
+    const raw = await getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveCachedMessages(sessionId, messages) {
+  try {
+    if (!sessionId || !Array.isArray(messages)) return;
+    const key = `${MESSAGES_CACHE_PREFIX}${sessionId}`;
+    const slice = messages.slice(-100);
+    await setItem(key, JSON.stringify(slice));
+  } catch {}
+}
+
+
