@@ -1698,10 +1698,23 @@ export default function ChatScreen() {
       </View>
 
       {isOffline && !wsConnected && (
-        <View style={[styles.offlineBanner, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgba(245, 158, 11, 0.15)', borderBottomColor: `${theme.warn}40` }]}>
-          <Icon name="shield" size={13} color={theme.warn} />
-          <Text style={[styles.offlineBannerText, { color: theme.warn }]}>
-            Viewing offline cached history · Laptop is currently unreachable
+        <View
+          style={[
+            styles.offlineBanner,
+            {
+              backgroundColor: isDark ? '#1a140b' : '#fef3c7',
+              borderColor: isDark ? '#78350f' : '#fcd34d'
+            }
+          ]}
+        >
+          <View style={[styles.offlinePill, { backgroundColor: isDark ? '#f59e0b25' : '#fde68a' }]}>
+            <View style={[styles.offlineDot, { backgroundColor: isDark ? '#fbbf24' : '#b45309' }]} />
+            <Text style={[styles.offlinePillText, { color: isDark ? '#fbbf24' : '#78350f' }]}>
+              OFFLINE
+            </Text>
+          </View>
+          <Text style={[styles.offlineBannerText, { color: isDark ? '#fef3c7' : '#78350f' }]} numberOfLines={2}>
+            Viewing cached history · Laptop is currently unreachable
           </Text>
         </View>
       )}
@@ -1918,7 +1931,7 @@ export default function ChatScreen() {
             ]}
             placeholder={
               isOffline && !wsConnected
-                ? 'Laptop offline (viewing cached chat)'
+                ? 'Laptop offline'
                 : (isWorking ? 'Give follow-up prompt...' : 'Message your agent')
             }
             placeholderTextColor={theme.subtle}
@@ -2989,18 +3002,37 @@ const styles = StyleSheet.create({
   offlineBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     marginHorizontal: 16,
     marginBottom: 8,
     borderRadius: 12,
     borderWidth: 1
   },
+  offlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6
+  },
+  offlineDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3
+  },
+  offlinePillText: {
+    fontSize: 9,
+    fontFamily: fontBold,
+    letterSpacing: 0.8
+  },
   offlineBannerText: {
     fontSize: 11,
     fontFamily: fontMedium,
-    flex: 1
+    flex: 1,
+    lineHeight: 16
   },
   sessionBar: {
     flexDirection: 'row',

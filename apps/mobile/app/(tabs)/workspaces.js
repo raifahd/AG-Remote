@@ -12,7 +12,7 @@ import {
   RefreshControl,
   Platform
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { useTheme } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
@@ -22,13 +22,15 @@ import {
   saveProfile,
   deleteProfile,
   getActiveProfile,
-  setActiveProfileId
+  setActiveProfileId,
+  getCachedSessions,
+  saveCachedSessions
 } from '../../src/storage.js';
 import { probeAllProfiles, fetchState, fetchSessions, focusSession, createSession } from '../../src/api.js';
 
 export default function WorkspacesScreen() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
 
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfileState] = useState(null);
@@ -55,21 +57,35 @@ export default function WorkspacesScreen() {
     setProfiles(list);
     setActiveProfileState(active);
 
+    const cached = await getCachedSessions(active?.id);
+    if (cached && cached.length > 0) {
+      setSessions(cached);
+    }
+
     if (active) {
       try {
         const [s, sess] = await Promise.all([
           fetchState(active).catch(() => null),
-          fetchSessions(active).catch(() => [])
+          fetchSessions(active).catch(() => null)
         ]);
         setActiveState(s);
-        setSessions(sess || []);
+        if (sess && Array.isArray(sess) && sess.length > 0) {
+          setSessions(sess);
+          saveCachedSessions(sess, active.id);
+        } else if (cached && cached.length > 0) {
+          setSessions(cached);
+        }
       } catch {
         setActiveState(null);
-        setSessions([]);
+        if (cached && cached.length > 0) {
+          setSessions(cached);
+        }
       }
     } else {
       setActiveState(null);
-      setSessions([]);
+      if (cached && cached.length > 0) {
+        setSessions(cached);
+      }
     }
 
     if (list.length > 0) {
@@ -81,6 +97,12 @@ export default function WorkspacesScreen() {
       setProbes(map);
     }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   useEffect(() => {
     loadData();
@@ -142,12 +164,13 @@ export default function WorkspacesScreen() {
   };
 
   const handleSelectSession = async (session) => {
-    if (!activeProfile) return;
-    setSwitchingSessionId(session.id);
-    try {
-      await focusSession(activeProfile, session.id);
-    } catch {}
-    setSwitchingSessionId(null);
+    if (activeProfile) {
+      setSwitchingSessionId(session.id);
+      try {
+        await focusSession(activeProfile, session.id);
+      } catch {}
+      setSwitchingSessionId(null);
+    }
     router.push({
       pathname: '/(tabs)/chat',
       params: { sessionId: session.id, sessionTitle: session.title }
@@ -271,10 +294,25 @@ export default function WorkspacesScreen() {
 
         <View style={styles.section}>
           <View style={styles.sectionHeading}>
-            <Text style={[styles.sectionTitle, { color: theme.text }]}>Conversations</Text>
+            <View style={styles.headingTitleRow}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Conversations</Text>
+              {activeProfile && probes[activeProfile.id]?.ok === false && sessions.length > 0 && (
+                <View style={[styles.cachedBadge, { backgroundColor: isDark ? '#f59e0b22' : '#fef3c7', borderColor: isDark ? '#78350f' : '#fcd34d' }]}>
+                  <Text style={[styles.cachedBadgeText, { color: isDark ? '#fbbf24' : '#92400e' }]}>
+                    CACHED
+                  </Text>
+                </View>
+              )}
+            </View>
             <TouchableOpacity
-              style={styles.headingAction}
-              onPress={() => setNewSessionModalVisible(true)}
+              style={[styles.headingAction, activeProfile && probes[activeProfile.id]?.ok === false && { opacity: 0.45 }]}
+              onPress={() => {
+                if (activeProfile && probes[activeProfile.id]?.ok === false) {
+                  Alert.alert('Laptop Offline', 'Cannot start new conversations while your laptop is unreachable.');
+                  return;
+                }
+                setNewSessionModalVisible(true);
+              }}
             >
               <Icon name="plus" size={17} color={theme.accent} />
               <Text style={[styles.headingActionText, { color: theme.accent }]}>New</Text>
@@ -284,7 +322,11 @@ export default function WorkspacesScreen() {
           {sessions.length === 0 ? (
             <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
               <Text style={[styles.emptyText, { color: theme.muted }]}>
-                {activeProfile ? 'No conversations found on bridge.' : 'Select a bridge above to view conversations.'}
+                {activeProfile
+                  ? (probes[activeProfile.id]?.ok === false
+                      ? 'Laptop is offline. No cached conversations found on this device.'
+                      : 'No conversations found on bridge.')
+                  : 'Select a bridge above to view conversations.'}
               </Text>
             </View>
           ) : (
@@ -562,6 +604,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 11,
     marginHorizontal: 1
+  },
+  headingTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  cachedBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1
+  },
+  cachedBadgeText: {
+    fontSize: 9,
+    fontFamily: fontBold,
+    letterSpacing: 0.8
   },
   sectionTitle: {
     fontSize: 16,

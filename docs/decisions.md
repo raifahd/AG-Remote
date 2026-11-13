@@ -371,6 +371,13 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - If the laptop is shut down or unreachable, the app gracefully maintains the cached conversations, allowing full browsing, history reading, and modal conversation switching completely offline.
 - **Offline Telemetry & Composer Guards:**
   - Added `isOffline` detection. When offline and WebSocket is disconnected, `TopBar` displays `OFFLINE (CACHED)`, a persistent warning banner states `Viewing offline cached history · Laptop is currently unreachable`, and the prompt composer disables sending with placeholder `Laptop offline (viewing cached chat)`.
+  - Re-engineered the offline banner styling with crisp high-contrast theme tokens (warm amber-charcoal `#1a140b` background with amber-100 `#fef3c7` text in dark mode; soft cream `#fef3c7` with deep amber-brown `#78350f` text in light mode), accompanied by a dedicated `OFFLINE` status pill.
+- **Workspaces Screen Offline Support (`workspaces.js`):**
+  - Integrated `getCachedSessions` and `saveCachedSessions` into `workspaces.js` alongside `useFocusEffect`.
+  - Conversations list immediately populates from local phone storage even when the app is launched fresh after the laptop is powered down.
+  - Tapping any cached conversation navigates to the Chat tab and displays that conversation's cached history.
+  - Added a `CACHED` badge on the Conversations section when the laptop is unreachable, and disabled new conversation creation with a clear warning alert.
+
 
 
 
