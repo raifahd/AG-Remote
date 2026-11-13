@@ -87,6 +87,30 @@ function formatMessageTime(timestamp) {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
+function mergeIncomingMessages(incomingList, currentList) {
+  if (!Array.isArray(incomingList) || incomingList.length === 0) {
+    return currentList || [];
+  }
+  if (!Array.isArray(currentList) || currentList.length === 0) {
+    return incomingList;
+  }
+  const pending = currentList.filter(
+    (m) =>
+      (m?.id?.startsWith('user-opt-') || m?.queued) &&
+      !incomingList.some(
+        (inc) =>
+          inc.role === 'user' &&
+          typeof inc.text === 'string' &&
+          typeof m.text === 'string' &&
+          inc.text.trim() === m.text.trim()
+      )
+  );
+  if (pending.length === 0) {
+    return incomingList;
+  }
+  return [...incomingList, ...pending];
+}
+
 function CodeSnippet({ code, lang = 'code', theme, fontSize = 13 }) {
   const [copied, setCopied] = useState(false);
 
@@ -1075,11 +1099,21 @@ const ChatMessageBubble = React.memo(function ChatMessageBubble({ item, theme, f
             </Text>
           )}
         </View>
-        {Boolean(formattedTime) && (
-          <Text style={[styles.userMessageTime, { color: theme.muted }]}>
-            {formattedTime}
-          </Text>
-        )}
+        <View style={styles.userMetaRow}>
+          {Boolean(item.queued || item.id?.startsWith('user-opt-')) && (
+            <View style={[styles.queuedPill, { backgroundColor: `${theme.accent}1c`, borderColor: `${theme.accent}40` }]}>
+              <Icon name="clock" size={10} color={theme.accent} />
+              <Text style={[styles.queuedPillText, { color: theme.accent }]}>
+                {item.queued ? 'QUEUED' : 'SENDING'}
+              </Text>
+            </View>
+          )}
+          {Boolean(formattedTime) && (
+            <Text style={[styles.userMessageTime, { color: theme.muted }]}>
+              {formattedTime}
+            </Text>
+          )}
+        </View>
       </View>
     );
   }
@@ -1299,7 +1333,7 @@ export default function ChatScreen() {
             fetchModels(active, liveResolvedSid || undefined).catch(() => null)
           ]);
           if (list && Array.isArray(list)) {
-            setMessages(list);
+            setMessages((prev) => mergeIncomingMessages(list, prev));
             if (liveResolvedSid) {
               saveCachedMessages(liveResolvedSid, list);
             }
@@ -1430,18 +1464,18 @@ export default function ChatScreen() {
             }
             setIsOffline(false);
             setMessages((prev) => {
-              const lastIncoming = list[list.length - 1];
+              const merged = mergeIncomingMessages(list, prev);
+              const lastMerged = merged[merged.length - 1];
               const lastExisting = prev[prev.length - 1];
-              const hasOptimistic = lastExisting?.id?.startsWith('user-opt-');
-              if (hasOptimistic) return prev;
               if (
-                list.length === prev.length &&
-                lastIncoming?.id === lastExisting?.id &&
-                lastIncoming?.text === lastExisting?.text
+                merged.length === prev.length &&
+                lastMerged?.id === lastExisting?.id &&
+                lastMerged?.text === lastExisting?.text &&
+                lastMerged?.queued === lastExisting?.queued
               ) {
                 return prev;
               }
-              return list;
+              return merged;
             });
           }
         })
@@ -1556,7 +1590,8 @@ export default function ChatScreen() {
       id: optimisticId,
       role: 'user',
       text: optimisticText,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      queued: isWorking
     };
 
     setInputText('');
@@ -1611,12 +1646,7 @@ export default function ChatScreen() {
 
       fetchMessages(profile, 50, currentSessionId || undefined).then((list) => {
         if (list && list.length > 0) {
-          setMessages((prev) => {
-            const lastReal = list[list.length - 1];
-            const lastPrev = prev[prev.length - 1];
-            if (lastReal?.id === lastPrev?.id && lastReal?.text === lastPrev?.text) return prev;
-            return list;
-          });
+          setMessages((prev) => mergeIncomingMessages(list, prev));
           if (currentSessionId) saveCachedMessages(currentSessionId, list);
         }
       }).catch(() => {});
@@ -2440,12 +2470,33 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     maxWidth: '90%'
   },
+  userMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    marginRight: 4
+  },
+  queuedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  queuedPillText: {
+    fontSize: 8.5,
+    fontFamily: fontBold,
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
+    includeFontPadding: false
+  },
   userMessageTime: {
     fontSize: 10,
     fontFamily: fontRegular,
-    marginTop: 3,
-    marginRight: 4,
-    opacity: 0.72
+    opacity: 0.72,
+    includeFontPadding: false
   },
   userBubble: {
     paddingVertical: 10,

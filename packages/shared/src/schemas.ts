@@ -67,7 +67,8 @@ export const ChatMessageSchema = z.object({
   toolArgs: z.string().optional(),
   toolSummary: z.string().optional(),
   toolStatus: z.string().optional(),
-  summary: z.string().optional()
+  summary: z.string().optional(),
+  queued: z.boolean().optional()
 }).strict();
 
 export const PromptRequestSchema = z.object({

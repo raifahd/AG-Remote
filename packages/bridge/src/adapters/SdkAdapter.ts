@@ -204,18 +204,31 @@ function readTranscriptMessages(brainDir: string | null, cascadeId: string, limi
         const stepIndex = step.step_index !== undefined ? step.step_index : idx++;
 
         if (step.type === 'USER_INPUT' && step.content) {
-          const reqMatch = typeof step.content === 'string'
-            ? step.content.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/)
-            : null;
-          const userText = reqMatch ? reqMatch[1].trim() : (typeof step.content === 'string' ? step.content : '');
-          if (userText) {
-            messages.push({
-              id: `user-${cascadeId}-${stepIndex}`,
-              role: 'user',
-              kind: 'message',
-              text: userText,
-              timestamp
-            });
+          if (typeof step.content === 'string') {
+            const regex = /<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/g;
+            let match: RegExpExecArray | null;
+            let matchCount = 0;
+            while ((match = regex.exec(step.content)) !== null) {
+              const uText = match[1]?.trim();
+              if (uText) {
+                messages.push({
+                  id: `user-${cascadeId}-${stepIndex}-${matchCount++}`,
+                  role: 'user',
+                  kind: 'message',
+                  text: uText,
+                  timestamp
+                });
+              }
+            }
+            if (matchCount === 0 && step.content.trim()) {
+              messages.push({
+                id: `user-${cascadeId}-${stepIndex}`,
+                role: 'user',
+                kind: 'message',
+                text: step.content.trim(),
+                timestamp
+              });
+            }
           }
         } else if (step.tool_calls && Array.isArray(step.tool_calls) && step.tool_calls.length > 0) {
           for (let tcIdx = 0; tcIdx < step.tool_calls.length; tcIdx++) {
@@ -312,6 +325,7 @@ export class SdkAdapter implements AgentAdapter {
   private selectedModelBySession = new Map<string, string>();
   private defaultSelectedModel: string | null = null;
   private cachedModels: ModelInfo[] = [];
+  private queuedPrompts = new Map<string, ChatMessage[]>();
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -590,61 +604,73 @@ export class SdkAdapter implements AgentAdapter {
       return [];
     }
 
-    const diskMsgs = readTranscriptMessages(this.brainDir, cascadeId, limit);
-    if (diskMsgs.length > 0) {
-      return diskMsgs;
+    let messages = readTranscriptMessages(this.brainDir, cascadeId, limit);
+    if (messages.length === 0) {
+      try {
+        const resp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId });
+        const steps = resp?.trajectory?.steps ?? [];
+
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          if (!step) {
+            continue;
+          }
+
+          const timestamp = step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now();
+
+          if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && step.userInput?.userResponse) {
+            messages.push({
+              id: `user-${step.metadata?.executionId ?? 'u'}-${i}`,
+              role: 'user',
+              kind: 'message',
+              text: step.userInput.userResponse,
+              timestamp
+            });
+          } else if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.plannerResponse?.response) {
+            messages.push({
+              id: `agent-${step.plannerResponse.messageId ?? step.metadata?.executionId ?? 'a'}-${i}`,
+              role: 'agent',
+              kind: 'message',
+              text: step.plannerResponse.response,
+              timestamp
+            });
+          } else if (step.metadata?.toolCall) {
+            const tc = step.metadata.toolCall;
+            const tcName = tc.name || 'tool';
+            const tcArgs = tc.argumentsJson || '';
+            messages.push({
+              id: `tool-${tc.id || i}`,
+              role: 'agent',
+              kind: 'tool',
+              title: tcName,
+              text: tcArgs || tcName,
+              toolName: tcName,
+              toolSummary: tcArgs,
+              timestamp
+            });
+          }
+        }
+      } catch {}
     }
 
-    try {
-      const resp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId });
-      const steps = resp?.trajectory?.steps ?? [];
-      const messages: ChatMessage[] = [];
-
-      for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
-        if (!step) {
-          continue;
-        }
-
-        const timestamp = step.metadata?.createdAt ? new Date(step.metadata.createdAt).getTime() : Date.now();
-
-        if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT' && step.userInput?.userResponse) {
-          messages.push({
-            id: `user-${step.metadata?.executionId ?? 'u'}-${i}`,
-            role: 'user',
-            kind: 'message',
-            text: step.userInput.userResponse,
-            timestamp
-          });
-        } else if (step.type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE' && step.plannerResponse?.response) {
-          messages.push({
-            id: `agent-${step.plannerResponse.messageId ?? step.metadata?.executionId ?? 'a'}-${i}`,
-            role: 'agent',
-            kind: 'message',
-            text: step.plannerResponse.response,
-            timestamp
-          });
-        } else if (step.metadata?.toolCall) {
-          const tc = step.metadata.toolCall;
-          const tcName = tc.name || 'tool';
-          const tcArgs = tc.argumentsJson || '';
-          messages.push({
-            id: `tool-${tc.id || i}`,
-            role: 'agent',
-            kind: 'tool',
-            title: tcName,
-            text: tcArgs || tcName,
-            toolName: tcName,
-            toolSummary: tcArgs,
-            timestamp
-          });
+    const queuedList = this.queuedPrompts.get(cascadeId) || [];
+    if (queuedList.length > 0) {
+      const remainingQueued: ChatMessage[] = [];
+      for (const q of queuedList) {
+        const alreadyInTranscript = messages.some(
+          (m) => m.role === 'user' && m.text.trim() === q.text.trim() && Math.abs(m.timestamp - q.timestamp) < 300000
+        );
+        if (!alreadyInTranscript) {
+          remainingQueued.push(q);
         }
       }
-
-      return messages.slice(-limit);
-    } catch {
-      return [];
+      this.queuedPrompts.set(cascadeId, remainingQueued);
+      if (remainingQueued.length > 0) {
+        messages = [...messages, ...remainingQueued];
+      }
     }
+
+    return messages.slice(-limit);
   }
 
   async sendPrompt(text: string, sessionId?: string, modelId?: string): Promise<void> {
@@ -682,6 +708,17 @@ export class SdkAdapter implements AgentAdapter {
         };
       }
     }
+
+    const promptMessage: ChatMessage = {
+      id: `queued-${cascadeId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      role: 'user',
+      kind: 'message',
+      text,
+      timestamp: Date.now(),
+      queued: true
+    };
+    const prevQueued = this.queuedPrompts.get(cascadeId) || [];
+    this.queuedPrompts.set(cascadeId, [...prevQueued, promptMessage]);
 
     this.stoppedSessions.delete(cascadeId);
     await this.callRpc('SendUserCascadeMessage', payload);
