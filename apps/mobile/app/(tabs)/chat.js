@@ -1400,7 +1400,9 @@ export default function ChatScreen() {
               setPendingApproval(null);
             }
           }
-          loadMessages(event.sessionId || currentSessionId);
+          if (event.status === 'idle' || event.status === 'done') {
+            loadMessages(event.sessionId || currentSessionId);
+          }
           return;
         }
         loadMessages();
@@ -1417,7 +1419,7 @@ export default function ChatScreen() {
 
   useEffect(() => {
     if (!profile) return;
-    const intervalMs = isWorking ? 400 : 3000;
+    const intervalMs = isWorking ? 1500 : 5000;
     const pollTimer = setInterval(() => {
       const sid = currentSessionId || undefined;
       fetchMessages(profile, 50, sid)
@@ -1428,14 +1430,18 @@ export default function ChatScreen() {
             }
             setIsOffline(false);
             setMessages((prev) => {
+              const lastIncoming = list[list.length - 1];
+              const lastExisting = prev[prev.length - 1];
+              const hasOptimistic = lastExisting?.id?.startsWith('user-opt-');
+              if (hasOptimistic) return prev;
               if (
-                list.length !== prev.length ||
-                list[list.length - 1]?.id !== prev[prev.length - 1]?.id ||
-                list[list.length - 1]?.text !== prev[prev.length - 1]?.text
+                list.length === prev.length &&
+                lastIncoming?.id === lastExisting?.id &&
+                lastIncoming?.text === lastExisting?.text
               ) {
-                return list;
+                return prev;
               }
-              return prev;
+              return list;
             });
           }
         })
@@ -1542,11 +1548,36 @@ export default function ChatScreen() {
     const trimmed = inputText.trim();
     if ((!trimmed && attachments.length === 0) || !profile || sending) return;
 
-    setSending(true);
-    setSendingStatus(attachments.length > 0 ? 'Uploading attachments...' : 'Sending prompt...');
     const pendingAttachments = [...attachments];
+
+    const optimisticId = `user-opt-${Date.now()}`;
+    const optimisticText = trimmed || (pendingAttachments.length > 0 ? `📎 ${pendingAttachments[0].name}` : '');
+    const optimisticMsg = {
+      id: optimisticId,
+      role: 'user',
+      text: optimisticText,
+      timestamp: Date.now()
+    };
+
     setInputText('');
     setAttachments([]);
+    setMessages((prev) => [...prev, optimisticMsg]);
+    setTimeout(scrollToBottom, 30);
+
+    setSending(true);
+    setSendingStatus(pendingAttachments.length > 0 ? 'Uploading attachments...' : 'Sending prompt...');
+
+    const sentTime = Date.now();
+    if (currentSessionId) {
+      setSessionWorkingStartedAt((prev) => ({
+        ...prev,
+        [currentSessionId]: sentTime
+      }));
+      setSessionStatuses((prev) => ({
+        ...prev,
+        [currentSessionId]: 'generating'
+      }));
+    }
 
     try {
       let messageText = trimmed;
@@ -1564,38 +1595,30 @@ export default function ChatScreen() {
           .join('\n\n');
 
         messageText = trimmed ? `${summaryList}\n\n${trimmed}` : summaryList;
+
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === optimisticId ? { ...m, text: messageText } : m
+          )
+        );
       }
 
       setSendingStatus('Delivering prompt to agent...');
-
-      const optimisticId = `user-opt-${Date.now()}`;
-      const optimisticMsg = {
-        id: optimisticId,
-        role: 'user',
-        text: messageText,
-        timestamp: Date.now()
-      };
-
-      const sentTime = Date.now();
-      if (currentSessionId) {
-        setSessionWorkingStartedAt((prev) => ({
-          ...prev,
-          [currentSessionId]: sentTime
-        }));
-        setSessionStatuses((prev) => ({
-          ...prev,
-          [currentSessionId]: 'generating'
-        }));
-      }
-      setMessages((prev) => [...prev, optimisticMsg]);
-      setTimeout(scrollToBottom, 60);
 
       await sendPrompt(profile, messageText, currentSessionId || undefined, selectedModel?.id || undefined);
       setSending(false);
       setSendingStatus('');
 
       fetchMessages(profile, 50, currentSessionId || undefined).then((list) => {
-        if (list && list.length > 0) setMessages(list);
+        if (list && list.length > 0) {
+          setMessages((prev) => {
+            const lastReal = list[list.length - 1];
+            const lastPrev = prev[prev.length - 1];
+            if (lastReal?.id === lastPrev?.id && lastReal?.text === lastPrev?.text) return prev;
+            return list;
+          });
+          if (currentSessionId) saveCachedMessages(currentSessionId, list);
+        }
       }).catch(() => {});
       fetchModels(profile, currentSessionId || undefined).then((mRes) => {
         if (mRes?.models) {
@@ -1611,6 +1634,7 @@ export default function ChatScreen() {
       setInputText(trimmed);
       setSending(false);
       setSendingStatus('');
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       if (currentSessionId) {
         setSessionWorkingStartedAt((prev) => {
           const next = { ...prev };
@@ -1687,6 +1711,11 @@ export default function ChatScreen() {
     [theme, chatTextSize]
   );
 
+  const keyExtractor = useCallback(
+    (item, index) => `${item?.id || 'msg'}-${index}`,
+    []
+  );
+
   const statusLabel = wsConnected
     ? `LIVE · ${(profile?.name || 'LAPTOP').toUpperCase()}`
     : (isOffline ? `OFFLINE (CACHED)` : `${(profile?.name || 'LAPTOP').toUpperCase()}`);
@@ -1745,17 +1774,18 @@ export default function ChatScreen() {
           ref={flatListRef}
           inverted={messages.length > 0}
           data={messages.length > 0 ? reversedMessages : []}
-          keyExtractor={(item, index) => `${item?.id || 'msg'}-${index}`}
+          keyExtractor={keyExtractor}
           renderItem={renderItem}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={11}
-          removeClippedSubviews={Platform.OS === 'android'}
+          initialNumToRender={12}
+          maxToRenderPerBatch={8}
+          updateCellsBatchingPeriod={50}
+          windowSize={7}
+          removeClippedSubviews={true}
           onScroll={(e) => {
             const y = e.nativeEvent.contentOffset.y;
             setShowScrollBottom(y > 140);
           }}
-          scrollEventThrottle={16}
+          scrollEventThrottle={64}
           contentContainerStyle={[
             styles.listContent,
             messages.length > 0

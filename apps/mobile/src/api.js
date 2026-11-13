@@ -7,6 +7,24 @@ import {
 } from '@ag-remote/shared';
 import { z } from 'zod';
 
+const _inflightCache = new Map();
+const DEDUP_WINDOW_MS = 350;
+
+function dedupRequest(key, fn) {
+  const cached = _inflightCache.get(key);
+  if (cached && Date.now() - cached.ts < DEDUP_WINDOW_MS) {
+    return cached.promise;
+  }
+  const promise = fn().finally(() => {
+    const entry = _inflightCache.get(key);
+    if (entry && entry.promise === promise) {
+      _inflightCache.delete(key);
+    }
+  });
+  _inflightCache.set(key, { promise, ts: Date.now() });
+  return promise;
+}
+
 export async function checkHealth(baseUrl, timeoutMs = 3000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -44,13 +62,17 @@ export async function probeAllProfiles(profiles) {
   return results;
 }
 
-export async function fetchState(profile) {
-  const res = await authenticatedRequest(profile, '/v1/state', 'GET');
-  const parsed = AgentStateSchema.safeParse(res);
-  if (!parsed.success) {
-    throw new Error('Invalid state response from bridge');
-  }
-  return parsed.data;
+export function fetchState(profile) {
+  if (!profile?.baseUrl) return Promise.reject(new Error('No profile'));
+  const key = `state:${profile.baseUrl}`;
+  return dedupRequest(key, async () => {
+    const res = await authenticatedRequest(profile, '/v1/state', 'GET');
+    const parsed = AgentStateSchema.safeParse(res);
+    if (!parsed.success) {
+      throw new Error('Invalid state response from bridge');
+    }
+    return parsed.data;
+  });
 }
 
 export async function fetchSessions(profile) {
@@ -74,17 +96,21 @@ export async function focusSession(profile, sessionId) {
   return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/focus`, 'POST');
 }
 
-export async function fetchMessages(profile, limit = 50, sessionId) {
-  const path = sessionId
-    ? `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`
-    : `/v1/messages?limit=${limit}`;
-  const res = await authenticatedRequest(profile, path, 'GET');
-  const schema = z.array(ChatMessageSchema);
-  const parsed = schema.safeParse(res);
-  if (!parsed.success) {
-    return [];
-  }
-  return parsed.data;
+export function fetchMessages(profile, limit = 50, sessionId) {
+  if (!profile?.baseUrl) return Promise.reject(new Error('No profile'));
+  const key = `messages:${profile.baseUrl}:${sessionId || ''}:${limit}`;
+  return dedupRequest(key, async () => {
+    const path = sessionId
+      ? `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`
+      : `/v1/messages?limit=${limit}`;
+    const res = await authenticatedRequest(profile, path, 'GET');
+    const schema = z.array(ChatMessageSchema);
+    const parsed = schema.safeParse(res);
+    if (!parsed.success) {
+      return [];
+    }
+    return parsed.data;
+  });
 }
 
 export async function sendPrompt(profile, text, sessionId, modelId) {
