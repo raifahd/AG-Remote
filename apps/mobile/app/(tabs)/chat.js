@@ -1755,8 +1755,6 @@ export default function ChatScreen() {
               isOffline={isOffline && !wsConnected}
             />
           }
-            />
-          }
         />
 
         {showScrollBottom && (
