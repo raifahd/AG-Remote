@@ -8,6 +8,11 @@
     "icon": "./assets/icon.png",
     "scheme": "ag-remote",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "ios": {
       "supportsTablet": true
     },
