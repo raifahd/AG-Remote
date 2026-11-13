@@ -619,12 +619,14 @@ const styles = StyleSheet.create({
   cachedBadgeText: {
     fontSize: 9,
     fontFamily: fontBold,
-    letterSpacing: 0.8
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
+    includeFontPadding: false
   },
   sectionTitle: {
     fontSize: 16,
-    letterSpacing: -0.4,
-    fontFamily: fontBold
+    letterSpacing: Platform.select({ ios: -0.4, default: 0 }),
+    fontFamily: fontBold,
+    includeFontPadding: false
   },
   headingAction: {
     flexDirection: 'row',
@@ -770,8 +772,9 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 0.8,
-    marginBottom: 4
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
+    marginBottom: 4,
+    includeFontPadding: false
   },
   input: {
     height: 42,

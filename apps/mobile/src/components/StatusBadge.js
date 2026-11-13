@@ -47,7 +47,8 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 9,
-    letterSpacing: 0.7,
-    fontFamily: fontSemiBold
+    letterSpacing: Platform.select({ ios: 0.7, default: 0 }),
+    fontFamily: fontSemiBold,
+    includeFontPadding: false
   }
 });

@@ -2395,9 +2395,10 @@ const styles = StyleSheet.create({
   dateLabel: {
     textAlign: 'center',
     fontSize: 9,
-    letterSpacing: 0.8,
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
     marginVertical: 14,
-    fontFamily: fontSemiBold
+    fontFamily: fontSemiBold,
+    includeFontPadding: false
   },
   agentMessageRow: {
     flexDirection: 'row',
@@ -2490,7 +2491,8 @@ const styles = StyleSheet.create({
   agentWorkingBadgeText: {
     fontSize: 9,
     fontFamily: fontBold,
-    letterSpacing: 0.8
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
+    includeFontPadding: false
   },
   agentWorkingTimer: {
     fontSize: 10,

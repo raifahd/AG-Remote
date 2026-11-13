@@ -152,9 +152,6 @@ export default function TabBar(props) {
                   { color: isFocused ? activeColor : inactiveColor }
                 ]}
                 numberOfLines={1}
-                ellipsizeMode="clip"
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}
               >
                 {tab.label}
               </Text>
@@ -236,9 +233,10 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   tabLabel: {
-    fontSize: 8.5,
+    fontSize: 10,
     fontFamily: fontMedium,
     textAlign: 'center',
-    includeFontPadding: false
+    includeFontPadding: false,
+    paddingHorizontal: 1
   }
 });

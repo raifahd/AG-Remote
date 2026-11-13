@@ -110,25 +110,29 @@ const styles = StyleSheet.create({
   wordmarkBold: {
     fontSize: 21,
     fontFamily: fontBold,
-    letterSpacing: -1
+    letterSpacing: Platform.select({ ios: -1, default: 0 }),
+    includeFontPadding: false
   },
   wordmarkLight: {
     fontSize: 21,
     fontFamily: fontRegular,
     marginLeft: 3,
-    letterSpacing: -1
+    letterSpacing: Platform.select({ ios: -1, default: 0 }),
+    includeFontPadding: false
   },
   eyebrow: {
     fontSize: 10,
-    letterSpacing: 1.2,
+    letterSpacing: Platform.select({ ios: 1.2, default: 0.2 }),
     fontFamily: fontSemiBold,
     marginBottom: 2,
-    textTransform: 'uppercase'
+    textTransform: 'uppercase',
+    includeFontPadding: false
   },
   heading: {
     fontSize: 18,
     fontFamily: fontBold,
-    letterSpacing: -0.5
+    letterSpacing: Platform.select({ ios: -0.5, default: 0 }),
+    includeFontPadding: false
   },
   iconButton: {
     width: 42,

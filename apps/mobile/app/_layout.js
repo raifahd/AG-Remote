@@ -15,13 +15,6 @@ import SplashScreen from '../src/components/SplashScreen.js';
 function RootLayoutNav() {
   const { theme, isDark } = useTheme();
 
-  const [fontsLoaded] = useFonts({
-    Poppins_400Regular,
-    Poppins_500Medium,
-    Poppins_600SemiBold,
-    Poppins_700Bold
-  });
-
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const existing = document.getElementById('ag-remote-fonts');
@@ -65,7 +58,27 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+    'Poppins-Regular': Poppins_400Regular,
+    'Poppins-Medium': Poppins_500Medium,
+    'Poppins-SemiBold': Poppins_600SemiBold,
+    'Poppins-Bold': Poppins_700Bold
+  });
   const [splashDone, setSplashDone] = useState(false);
+
+  if (!fontsLoaded) {
+    return (
+      <View style={styles.rootContainer}>
+        <View style={styles.splashContainer} pointerEvents="auto">
+          <SplashScreen />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ThemeProvider>

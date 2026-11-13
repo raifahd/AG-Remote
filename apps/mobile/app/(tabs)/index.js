@@ -486,19 +486,22 @@ const styles = StyleSheet.create({
   },
   connectedEyebrow: {
     fontSize: 9,
-    letterSpacing: 0.9,
+    letterSpacing: Platform.select({ ios: 0.9, default: 0.2 }),
     fontFamily: fontSemiBold,
-    marginBottom: 1
+    marginBottom: 1,
+    includeFontPadding: false
   },
   machineName: {
     fontSize: 13,
     fontFamily: fontBold,
-    lineHeight: 18
+    lineHeight: 18,
+    includeFontPadding: false
   },
   machineOs: {
     fontSize: 11,
     fontFamily: fontRegular,
-    marginTop: 1
+    marginTop: 1,
+    includeFontPadding: false
   },
   agentState: {
     alignItems: 'center',
@@ -538,9 +541,10 @@ const styles = StyleSheet.create({
   },
   agentEyebrow: {
     fontSize: 10,
-    letterSpacing: 1.2,
+    letterSpacing: Platform.select({ ios: 1.2, default: 0.2 }),
     fontFamily: fontSemiBold,
-    marginBottom: 2
+    marginBottom: 2,
+    includeFontPadding: false
   },
   agentHeadingRow: {
     flexDirection: 'row',
@@ -550,17 +554,20 @@ const styles = StyleSheet.create({
   agentHeading: {
     fontSize: 30,
     fontFamily: fontBold,
-    letterSpacing: -1.2,
-    lineHeight: 36
+    letterSpacing: Platform.select({ ios: -1.2, default: 0 }),
+    lineHeight: 38,
+    includeFontPadding: false
   },
   blinker: {
     fontSize: 26,
-    fontFamily: fontBold
+    fontFamily: fontBold,
+    includeFontPadding: false
   },
   agentDesc: {
     fontSize: 12,
     fontFamily: fontRegular,
-    marginTop: 3
+    marginTop: 3,
+    includeFontPadding: false
   },
   approvalCard: {
     padding: 16,
@@ -586,10 +593,11 @@ const styles = StyleSheet.create({
   },
   approvalTitle: {
     fontSize: 17,
-    letterSpacing: -0.4,
+    letterSpacing: Platform.select({ ios: -0.4, default: 0 }),
     fontFamily: fontBold,
     marginTop: 12,
-    marginBottom: 2
+    marginBottom: 2,
+    includeFontPadding: false
   },
   approvalDesc: {
     fontSize: 12,
@@ -682,8 +690,9 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 16,
-    letterSpacing: -0.4,
-    fontFamily: fontBold
+    letterSpacing: Platform.select({ ios: -0.4, default: 0 }),
+    fontFamily: fontBold,
+    includeFontPadding: false
   },
   viewAllButton: {
     flexDirection: 'row',
@@ -749,7 +758,8 @@ const styles = StyleSheet.create({
   onboardTitle: {
     fontSize: 15,
     fontFamily: fontBold,
-    letterSpacing: -0.3
+    letterSpacing: Platform.select({ ios: -0.3, default: 0 }),
+    includeFontPadding: false
   },
   onboardSub: {
     fontSize: 12,

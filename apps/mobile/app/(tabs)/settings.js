@@ -392,10 +392,11 @@ const styles = StyleSheet.create({
   },
   groupLabel: {
     fontSize: 10,
-    letterSpacing: 1.2,
+    letterSpacing: Platform.select({ ios: 1.2, default: 0.2 }),
     fontFamily: fontSemiBold,
     marginBottom: 7,
-    marginLeft: 2
+    marginLeft: 2,
+    includeFontPadding: false
   },
   settingsCard: {
     borderRadius: 20,
@@ -502,7 +503,7 @@ const styles = StyleSheet.create({
   versionText: {
     textAlign: 'center',
     fontSize: 9,
-    letterSpacing: 0.6,
+    letterSpacing: Platform.select({ ios: 0.6, default: 0 }),
     marginTop: 26,
     fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' })
   },
