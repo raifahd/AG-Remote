@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -69,8 +69,32 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
-      <RootLayoutNav />
-      {!splashDone && <SplashScreen onFinished={() => setSplashDone(true)} />}
+      <View style={styles.rootContainer}>
+        <View style={styles.navContainer}>
+          <RootLayoutNav />
+        </View>
+        {!splashDone && (
+          <View style={styles.splashContainer} pointerEvents="auto">
+            <SplashScreen onFinished={() => setSplashDone(true)} />
+          </View>
+        )}
+      </View>
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  rootContainer: {
+    flex: 1,
+    backgroundColor: '#000000'
+  },
+  navContainer: {
+    flex: 1
+  },
+  splashContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99999,
+    elevation: 99999,
+    backgroundColor: '#000000'
+  }
+});

@@ -308,4 +308,25 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Added `.session-bar` to `packages/bridge/src/webApp.ts` with a styled `<select id="sessionSelect">` and `+ New` button.
   - Populates session options dynamically via `GET /v1/sessions`, switches focus on change via `POST /v1/sessions/:id/focus`, and sends prompts scoped via `POST /v1/sessions/:id/prompt`.
 
+## 2026-11-13: Splash Screen Redesign & Elimination of Home Page Overlay
+- **Root Cause of Home Screen Overlay & Flash:**
+  - The previous splash screen rendered inside a React Native `<Modal visible transparent>`.
+  - In React Native (both native and web via React Portal), `<Modal>` has an asynchronous mounting/presentation cycle. The underlying `RootLayoutNav` painted the home screen first, causing the splash screen to pop up visibly as an overlay on top of the already-rendered home screen.
+- **Root Layout Direct Rendering Architecture:**
+  - Eliminated `<Modal>` completely from `SplashScreen.js`.
+  - In `apps/mobile/app/_layout.js`, mounted `SplashScreen` directly in the root layout with `StyleSheet.absoluteFillObject`, `zIndex: 99999`, and `elevation: 99999`, over a solid pitch-black (`#000000`) container.
+  - Intercepts all interactions during startup (`pointerEvents="auto"`) and occludes the underlying navigation tree completely on line 1 of the initial render without flash or delay.
+  - When the splash sequence completes, smoothly fades out over 450ms and cleanly unmounts via `onFinished`, revealing the fully loaded and ready app.
+- **Futuristic Antigravity Visual Design & Colors:**
+  - Redesigned with the full Antigravity spectrum on deep OLED black (`#000000`):
+    - Primary violet (`#7C5CFF`), electric cyber blue (`#4385F5`), electric cyan (`#25C9DF`), neon hot pink (`#ED5BA6`), emerald green (`#28C77B`), and solar amber (`#F1B83A`).
+  - Choreographed multi-stage animations:
+    - Multi-color breathing ambient nebula with layered floating glow auras.
+    - Precision HUD corner brackets and reticles framing the viewport.
+    - Concentric orbital gravitational rings with opposite-direction continuous rotations and glowing orbital satellite nodes.
+    - Central Antigravity emblem featuring a squircle badge with dual neon corner brackets, levitation prism mark, bold "AG" typography, and a diagonal light shimmer sweep.
+    - Letter-spaced "AG REMOTE" typography and "ANTIGRAVITY COMPANION" spectrum badge.
+    - Dynamic telemetry pill with pulsing green beacon dot, live status transitions ("INITIALIZING ENGINE" -> "AGENT CORE READY"), and animated progress bar track.
+
+
 
