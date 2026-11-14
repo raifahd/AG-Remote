@@ -1356,6 +1356,11 @@ export default function ChatScreen() {
           }
           if (st?.status && (!liveResolvedSid || liveResolvedSid === st.activeSessionId)) {
             setAgentStatus(st.status);
+            if (st.pendingApproval) {
+              setPendingApproval(st.pendingApproval);
+            } else if (st.status !== 'awaiting_approval') {
+              setPendingApproval(null);
+            }
           }
           if (modelData?.models) {
             setAvailableModels(modelData.models);
@@ -1509,6 +1514,11 @@ export default function ChatScreen() {
         .then((st) => {
           if (st?.status && (!currentSessionId || currentSessionId === st.activeSessionId)) {
             setAgentStatus(st.status);
+            if (st.pendingApproval) {
+              setPendingApproval(st.pendingApproval);
+            } else if (st.status !== 'awaiting_approval') {
+              setPendingApproval(null);
+            }
           }
         })
         .catch(() => {});
