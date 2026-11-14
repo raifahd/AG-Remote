@@ -3,7 +3,8 @@ import {
   AgentStateSchema,
   ChatMessageSchema,
   SessionSummarySchema,
-  UploadResponseSchema
+  UploadResponseSchema,
+  AppVersionInfoSchema
 } from '@ag-remote/shared';
 import { z } from 'zod';
 
@@ -234,6 +235,30 @@ async function authenticatedRequest(profile, pathname, method, body = null, time
     throw err;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+export async function checkAppVersion(baseUrl, token, clientVersion, clientBuildId) {
+  try {
+    const cleanBase = baseUrl.replace(/\/+$/, '');
+    const query = [];
+    if (clientVersion) query.push(`clientVersion=${encodeURIComponent(clientVersion)}`);
+    if (clientBuildId) query.push(`clientBuildId=${encodeURIComponent(clientBuildId)}`);
+    const qs = query.length > 0 ? `?${query.join('&')}` : '';
+
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${cleanBase}/v1/version${qs}`, {
+      method: 'GET',
+      headers
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const parsed = AppVersionInfoSchema.safeParse(json);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
   }
 }
 

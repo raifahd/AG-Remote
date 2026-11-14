@@ -378,7 +378,20 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Tapping any cached conversation navigates to the Chat tab and displays that conversation's cached history.
   - Added a `CACHED` badge on the Conversations section when the laptop is unreachable, and disabled new conversation creation with a clear warning alert.
 
-## 2026-11-13: Production Readiness, Zero-Cost Standalone Setup & First-Run Onboarding
+## 2026-11-14: Mobile App Version Control & Immediate Force-Update Enforcement
+- **Automated Mobile Fingerprinting & Version Endpoints:**
+  - Implemented `getMobileVersionState` in `packages/bridge/src/versioning.ts` which computes a real-time SHA-256 fingerprint from `apps/mobile/app.json`, `package.json`, and file modifications across `app/` and `src/`.
+  - Added `GET /v1/version` and `GET /version` endpoints to check client version and build ID against the repository's current state.
+  - Added `GET /v1/app/download` and `GET /app/download` to stream standalone `.apk` files directly to the mobile device for fast one-tap in-place updates.
+- **Client Force-Update Enforcement (`ForceUpdateModal.js`):**
+  - Integrated `ForceUpdateModal` into `apps/mobile/app/_layout.js` inside `ThemeProvider`.
+  - Runs periodic background checks (every 8 seconds and on app focus) against the active bridge profile.
+  - If a code change is made in the mobile app, the server's build ID shifts and the APK immediately presents a non-dismissible blocking modal displaying installed vs required versions.
+  - Provides a 1-tap "Download & Install APK" action using `Linking.openURL` pointing to the bridge's download endpoint.
+- **Cross-Platform APK Stamping & Build Tooling:**
+  - Created `scripts/build-apk.sh` and `scripts/build-apk.ps1` to stamp `apps/mobile/src/version.js` with current build signatures and build/stage APK releases.
+  - Added `"build:apk"` convenience script to root `package.json`.
+
 - **Purge Remaining Hardcoded Dev Fallbacks:**
   - Removed lingering fallback IP address (`100.69.62.84:48123`) from `NotificationModal.js`, ensuring all displays dynamically derive target hostname from the active profile or cleanly show `Not connected`.
 - **First-Launch Mobile Onboarding Experience:**

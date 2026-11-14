@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Platform, View, StyleSheet } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Platform, View, StyleSheet, AppState } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -11,6 +11,10 @@ import {
 } from '@expo-google-fonts/poppins';
 import { ThemeProvider, useTheme } from '../src/theme.js';
 import SplashScreen from '../src/components/SplashScreen.js';
+import ForceUpdateModal from '../src/components/ForceUpdateModal.js';
+import { getActiveProfile } from '../src/storage.js';
+import { checkAppVersion } from '../src/api.js';
+import { APP_VERSION, APP_BUILD_ID } from '../src/version.js';
 
 function RootLayoutNav() {
   const { theme, isDark } = useTheme();
@@ -69,6 +73,55 @@ export default function RootLayout() {
     'Poppins-Bold': Poppins_700Bold
   });
   const [splashDone, setSplashDone] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState({
+    visible: false,
+    installedVersion: APP_VERSION,
+    installedBuild: APP_BUILD_ID,
+    latestVersion: APP_VERSION,
+    latestBuild: APP_BUILD_ID,
+    downloadUrl: null,
+    apkAvailable: false
+  });
+
+  const runVersionCheck = useCallback(async () => {
+    try {
+      const profile = await getActiveProfile();
+      if (!profile?.baseUrl) return;
+      const res = await checkAppVersion(
+        profile.baseUrl,
+        profile.token,
+        APP_VERSION,
+        APP_BUILD_ID
+      );
+      if (res && res.updateRequired) {
+        setUpdateInfo({
+          visible: true,
+          installedVersion: APP_VERSION,
+          installedBuild: APP_BUILD_ID,
+          latestVersion: res.version,
+          latestBuild: res.buildId,
+          downloadUrl: res.downloadUrl,
+          apkAvailable: res.apkAvailable
+        });
+      } else if (res && !res.updateRequired) {
+        setUpdateInfo((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    runVersionCheck();
+    const interval = setInterval(runVersionCheck, 8000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        runVersionCheck();
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, [runVersionCheck]);
 
   if (!fontsLoaded) {
     return (
@@ -86,6 +139,16 @@ export default function RootLayout() {
         <View style={styles.navContainer}>
           <RootLayoutNav />
         </View>
+        <ForceUpdateModal
+          visible={updateInfo.visible}
+          installedVersion={updateInfo.installedVersion}
+          installedBuild={updateInfo.installedBuild}
+          latestVersion={updateInfo.latestVersion}
+          latestBuild={updateInfo.latestBuild}
+          downloadUrl={updateInfo.downloadUrl}
+          apkAvailable={updateInfo.apkAvailable}
+          onRetry={runVersionCheck}
+        />
         {!splashDone && (
           <View style={styles.splashContainer} pointerEvents="auto">
             <SplashScreen onFinished={() => setSplashDone(true)} />

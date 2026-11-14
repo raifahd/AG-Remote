@@ -19,6 +19,7 @@ import {
 import { RateLimiter, TokenManager, constantTimeCompare } from './auth.js';
 import { AgentAdapter } from './adapters/AgentAdapter.js';
 import { NtfyNotifier } from './notifier.js';
+import { getMobileVersionState } from './versioning.js';
 
 export interface ServerConfig {
   port: number;
@@ -66,8 +67,54 @@ export class BridgeServer {
       res.json(this.buildHealthResponse());
     });
 
+    const handleVersionCheck = (req: Request, res: Response) => {
+      const state = getMobileVersionState();
+      const clientVersion = typeof req.query.clientVersion === 'string' ? req.query.clientVersion : undefined;
+      const clientBuildId = typeof req.query.clientBuildId === 'string' ? req.query.clientBuildId : undefined;
+
+      let updateRequired = false;
+      if (clientBuildId && clientBuildId !== 'dev' && clientBuildId !== 'dev-latest') {
+        if (clientBuildId !== state.buildId || (clientVersion && clientVersion !== state.version)) {
+          updateRequired = true;
+        }
+      } else if (clientVersion && clientVersion !== state.version) {
+        updateRequired = true;
+      }
+
+      const host = req.get('host') || `${this.config.host}:${this.config.port}`;
+      const protocol = req.protocol || 'http';
+      const downloadUrl = state.apkAvailable ? `${protocol}://${host}/v1/app/download` : null;
+
+      res.json({
+        version: state.version,
+        buildId: state.buildId,
+        updateRequired,
+        apkAvailable: state.apkAvailable,
+        downloadUrl,
+        message: updateRequired ? 'New app version available' : undefined
+      });
+    };
+
+    const handleDownloadApk = (_req: Request, res: Response) => {
+      const state = getMobileVersionState();
+      if (!state.apkAvailable || !state.apkPath) {
+        res.status(404).json(this.makeError('NOT_FOUND', 'APK build not found on server'));
+        return;
+      }
+      res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+      res.setHeader('Content-Disposition', `attachment; filename="ag-remote-${state.version}-${state.buildId}.apk"`);
+      const stream = fs.createReadStream(state.apkPath);
+      stream.pipe(res);
+    };
+
+    this.app.get('/version', handleVersionCheck);
+    this.app.get('/app/download', handleDownloadApk);
+
     const v1Router = express.Router();
     v1Router.use(this.authMiddleware.bind(this));
+
+    v1Router.get('/version', handleVersionCheck);
+    v1Router.get('/app/download', handleDownloadApk);
 
     v1Router.get('/health', (_req: Request, res: Response) => {
       res.json(this.buildHealthResponse());

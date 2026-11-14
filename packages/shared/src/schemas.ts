@@ -102,6 +102,17 @@ export const QuietHoursSettingsSchema = z.object({
 
 export type QuietHoursSettings = z.infer<typeof QuietHoursSettingsSchema>;
 
+export const AppVersionInfoSchema = z.object({
+  version: z.string(),
+  buildId: z.string(),
+  updateRequired: z.boolean(),
+  apkAvailable: z.boolean(),
+  downloadUrl: z.string().nullable(),
+  message: z.string().optional()
+}).strict();
+
+export type AppVersionInfo = z.infer<typeof AppVersionInfoSchema>;
+
 export const StatusChangedEventSchema = z.object({
   type: z.literal('status_changed'),
   sessionId: z.string(),
