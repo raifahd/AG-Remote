@@ -1338,11 +1338,20 @@ export default function ChatScreen() {
               saveCachedMessages(liveResolvedSid, list);
             }
             const lastUser = [...list].reverse().find((m) => m.role === 'user');
-            if (lastUser?.timestamp && liveResolvedSid) {
-              setSessionWorkingStartedAt((prev) => ({
-                ...prev,
-                [liveResolvedSid]: prev[liveResolvedSid] || lastUser.timestamp
-              }));
+            if (liveResolvedSid) {
+              if (st?.status === 'generating') {
+                const isRecent = lastUser?.timestamp && (Date.now() - lastUser.timestamp < 1800000);
+                setSessionWorkingStartedAt((prev) => ({
+                  ...prev,
+                  [liveResolvedSid]: prev[liveResolvedSid] || (isRecent ? lastUser.timestamp : Date.now())
+                }));
+              } else {
+                setSessionWorkingStartedAt((prev) => {
+                  const next = { ...prev };
+                  delete next[liveResolvedSid];
+                  return next;
+                });
+              }
             }
           }
           if (st?.status && (!liveResolvedSid || liveResolvedSid === st.activeSessionId)) {
@@ -1415,6 +1424,18 @@ export default function ChatScreen() {
               ...prev,
               [event.sessionId]: event.status
             }));
+            if (event.status === 'generating') {
+              setSessionWorkingStartedAt((prev) => ({
+                ...prev,
+                [event.sessionId]: prev[event.sessionId] || Date.now()
+              }));
+            } else {
+              setSessionWorkingStartedAt((prev) => {
+                const next = { ...prev };
+                delete next[event.sessionId];
+                return next;
+              });
+            }
             if (event.action) {
               setSessionActions((prev) => ({
                 ...prev,
@@ -1732,9 +1753,17 @@ export default function ChatScreen() {
     return [...messages].reverse().find((m) => m.role === 'user');
   }, [messages]);
 
-  const workingStartedAt = (currentSessionId && sessionWorkingStartedAt[currentSessionId]) ||
-    latestUserMsg?.timestamp ||
-    Date.now();
+  const workingStartedAt = useMemo(() => {
+    const recorded = currentSessionId ? sessionWorkingStartedAt[currentSessionId] : null;
+    if (recorded && recorded <= Date.now() && Date.now() - recorded < 7200000) {
+      return recorded;
+    }
+    const lastUserTime = latestUserMsg?.timestamp;
+    if (lastUserTime && lastUserTime <= Date.now() && Date.now() - lastUserTime < 1800000) {
+      return lastUserTime;
+    }
+    return Date.now();
+  }, [currentSessionId, sessionWorkingStartedAt, latestUserMsg]);
 
   const renderItem = useCallback(
     ({ item }) => <ChatMessageBubble item={item} theme={theme} fontSize={chatTextSize} />,
@@ -2117,11 +2146,13 @@ export default function ChatScreen() {
                             </Text>
                           )}
                         </View>
-                        <Text style={[styles.sessionRowMeta, { color: theme.muted }]}>
+                        <Text style={[styles.sessionRowMeta, { color: theme.muted }]} numberOfLines={1}>
                           {s.stepCount ? `${s.stepCount} steps` : 'Active conversation'}
                         </Text>
                       </View>
-                      <StatusBadge text={badgeText} tone={statusTone} />
+                      <View style={styles.sessionRowBadgeWrap}>
+                        <StatusBadge text={badgeText} tone={statusTone} />
+                      </View>
                     </TouchableOpacity>
                   );
                 })
@@ -3183,23 +3214,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 11,
-    paddingHorizontal: 13,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
     borderWidth: 1,
     marginBottom: 8
   },
   sessionRowLeft: {
     flex: 1,
-    marginRight: 10
+    minWidth: 0,
+    marginRight: 12
   },
   sessionRowTitle: {
+    flex: 1,
     fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 2
+    fontFamily: fontSemiBold,
+    includeFontPadding: false
   },
   sessionRowMeta: {
-    fontSize: 11
+    fontSize: 11,
+    fontFamily: fontRegular,
+    includeFontPadding: false,
+    marginTop: 2
+  },
+  sessionRowBadgeWrap: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    flexShrink: 0
   },
   modalNewBtn: {
     flexDirection: 'row',
@@ -3342,11 +3383,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 6,
-    marginBottom: 2
+    gap: 8
   },
   sessionRowTime: {
-    fontSize: 11
+    fontSize: 10.5,
+    fontFamily: fontRegular,
+    includeFontPadding: false,
+    flexShrink: 0
   },
   composerHeaderRow: {
     width: '100%',

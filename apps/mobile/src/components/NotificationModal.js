@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+  Linking
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme.js';
@@ -22,6 +23,7 @@ export default function NotificationModal({ visible, onClose }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+  const [topic, setTopic] = useState('');
 
   useEffect(() => {
     if (!visible) {
@@ -33,7 +35,11 @@ export default function NotificationModal({ visible, onClose }) {
         const active = await getActiveProfile();
         setProfile(active);
         if (active) {
+          setTopic(active.ntfyTopic || '');
           const settings = await fetchSettings(active).catch(() => null);
+          if (settings?.ntfyTopic) {
+            setTopic(settings.ntfyTopic);
+          }
           if (settings?.quietHours) {
             setQuietHoursEnabled(Boolean(settings.quietHours.enabled));
           }
@@ -137,6 +143,30 @@ export default function NotificationModal({ visible, onClose }) {
               <Text style={[styles.hostText, { color: theme.muted }]}>
                 Target Host: {profile?.baseUrl ? profile.baseUrl.replace(/^https?:\/\//, '') : 'Not connected'}
               </Text>
+
+              {Boolean(topic) && (
+                <View style={[styles.topicContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                  <View style={styles.topicHeader}>
+                    <Text style={[styles.topicLabel, { color: theme.muted }]}>NTFY TOPIC</Text>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        try {
+                          await Linking.openURL(`https://ntfy.sh/${topic}`);
+                        } catch {}
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.topicOpenLink, { color: theme.accent }]}>Open on ntfy.sh ↗</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.topicValue, { color: theme.text }]} numberOfLines={1} selectable>
+                    {topic}
+                  </Text>
+                  <Text style={[styles.topicHint, { color: theme.subtle }]}>
+                    Subscribe to this topic in the ntfy app on your phone to receive alerts.
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[
@@ -373,7 +403,39 @@ const styles = StyleSheet.create({
   hostText: {
     fontSize: 11,
     fontFamily: fontRegular,
-    marginBottom: 14
+    marginBottom: 10
+  },
+  topicContainer: {
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12
+  },
+  topicHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4
+  },
+  topicLabel: {
+    fontSize: 9,
+    fontFamily: fontBold,
+    letterSpacing: Platform.select({ ios: 0.8, default: 0 }),
+    includeFontPadding: false
+  },
+  topicOpenLink: {
+    fontSize: 11,
+    fontFamily: fontSemiBold
+  },
+  topicValue: {
+    fontSize: 12,
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    marginBottom: 4
+  },
+  topicHint: {
+    fontSize: 10,
+    fontFamily: fontRegular,
+    lineHeight: 14
   },
   testButton: {
     flexDirection: 'row',

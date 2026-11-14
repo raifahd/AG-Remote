@@ -325,9 +325,15 @@ export class BridgeServer {
       res.json({ ok });
     });
 
-    v1Router.get('/settings', (_req: Request, res: Response) => {
+    v1Router.get('/settings', async (_req: Request, res: Response) => {
       const qh = this.notifier ? this.notifier.getQuietHours() : { enabled: false, startHour: 23, endHour: 7 };
-      res.json({ quietHours: qh });
+      let ntfyTopic: string | undefined;
+      if (this.notifier) {
+        try {
+          ntfyTopic = await this.notifier.getOrCreateTopic();
+        } catch {}
+      }
+      res.json({ quietHours: qh, ntfyTopic });
     });
 
     v1Router.post('/settings', (req: Request, res: Response) => {
