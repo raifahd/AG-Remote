@@ -99,6 +99,11 @@ export class AgentStateMachine {
       this.sessionTitles.set(sid, title);
     }
     this.cancelDebounce(sid);
+
+    const prevStatus = this.sessionStatuses.get(sid);
+    if (prevStatus === 'awaiting_approval' && this.sessionApprovals.has(sid)) {
+      return;
+    }
     this.sessionApprovals.delete(sid);
 
     const prevAction = this.sessionActions.get(sid);
@@ -110,7 +115,6 @@ export class AgentStateMachine {
       this.sessionThoughts.set(sid, thinking);
     }
 
-    const prevStatus = this.sessionStatuses.get(sid);
     const actionChanged = action !== undefined && action !== prevAction;
     const thoughtChanged = thinking !== undefined && thinking !== prevThought;
 
@@ -118,6 +122,11 @@ export class AgentStateMachine {
       this.sessionStatuses.set(sid, 'generating');
       this.emitStatusChanged(sid, 'generating', action ?? prevAction, thinking ?? prevThought);
     }
+  }
+
+  clearApproval(sessionId?: string): void {
+    const sid = sessionId ?? this.activeSessionId ?? 'default-session';
+    this.sessionApprovals.delete(sid);
   }
 
   onAwaitingApproval(approval: PendingApproval, sessionId?: string, title?: string): void {
@@ -129,6 +138,11 @@ export class AgentStateMachine {
       this.sessionTitles.set(sid, title);
     }
     this.cancelDebounce(sid);
+
+    const existing = this.sessionApprovals.get(sid);
+    if (existing && existing.requestId === approval.requestId && this.sessionStatuses.get(sid) === 'awaiting_approval') {
+      return;
+    }
 
     this.sessionApprovals.set(sid, approval);
     this.sessionStatuses.set(sid, 'awaiting_approval');

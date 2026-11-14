@@ -39,6 +39,7 @@ export class NtfyNotifier {
   private quietHoursEnabled = false;
   private quietHoursStart = 23;
   private quietHoursEnd = 7;
+  private readonly notifiedApprovals = new Map<string, number>();
 
   constructor(secretStore: SecretStore, config: NotifierConfig = {}) {
     this.secretStore = secretStore;
@@ -216,6 +217,14 @@ export class NtfyNotifier {
   }
 
   async notifyApprovalRequested(kind: string, summary: string, sessionId?: string, sessionTitle?: string): Promise<boolean> {
+    const key = `${sessionId ?? 'default'}:${kind}:${summary}`;
+    const lastTime = this.notifiedApprovals.get(key) ?? 0;
+    const now = Date.now();
+    if (now - lastTime < 120000) {
+      return true;
+    }
+    this.notifiedApprovals.set(key, now);
+
     const safeSummary = summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
     const titlePrefix = sessionTitle
       ? `[${this.hostLabel}] Approval: ${sessionTitle}`

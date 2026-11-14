@@ -456,6 +456,9 @@ export class SdkAdapter implements AgentAdapter {
           if (this.stoppedSessions.has(id)) {
             continue;
           }
+          if (this.stateMachine.getStatus(id) === 'awaiting_approval') {
+            continue;
+          }
           const activity = getLatestSessionActivity(this.brainDir, id);
           this.stateMachine.onGenerating(id, title, activity.action, activity.thinking);
         } else {
@@ -469,7 +472,8 @@ export class SdkAdapter implements AgentAdapter {
           const trajResp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId: activeId });
           const steps = trajResp?.trajectory?.steps ?? [];
           if (steps.length > 0) {
-            const lastStep = steps[steps.length - 1];
+            const lastIndex = steps.length - 1;
+            const lastStep = steps[lastIndex];
             if (lastStep?.status === 'CORTEX_STEP_STATUS_WAITING') {
               const stepType = lastStep.type ?? '';
               let kind: 'edit' | 'terminal' | 'tool' = 'tool';
@@ -479,15 +483,24 @@ export class SdkAdapter implements AgentAdapter {
                 kind = 'terminal';
               }
               const currentPending = this.stateMachine.getPendingApproval(activeId);
-              if (!currentPending) {
+              const stableReqId = lastStep.metadata?.executionId
+                ? `req_${lastStep.metadata.executionId}`
+                : `req_step_${lastIndex}`;
+
+              if (!currentPending || currentPending.requestId !== stableReqId) {
                 const approval: PendingApproval = {
-                  requestId: `req_${lastStep.metadata?.executionId ?? Date.now()}`,
+                  requestId: stableReqId,
                   sessionId: activeId,
                   kind,
                   summary: `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`,
                   createdAt: Date.now()
                 };
                 this.stateMachine.onAwaitingApproval(approval, activeId);
+              }
+            } else {
+              const currentPending = this.stateMachine.getPendingApproval(activeId);
+              if (currentPending) {
+                this.stateMachine.clearApproval(activeId);
               }
             }
           }
