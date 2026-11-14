@@ -1723,13 +1723,13 @@ export default function ChatScreen() {
     }
   };
 
-  const handleApprove = async () => {
+  const handleApprove = async (scope = 'once') => {
     if (!profile || !pendingApproval) return;
     const approval = pendingApproval;
     setPendingApproval(null);
     setAgentStatus('generating');
     try {
-      await sendApprove(profile, approval.requestId);
+      await sendApprove(profile, approval.requestId, scope);
       await loadMessages(currentSessionId || undefined);
     } catch (err) {
       setPendingApproval(approval);
@@ -2390,22 +2390,50 @@ export default function ChatScreen() {
             <Text style={[styles.approvalSummary, { color: theme.muted }]}>
               {pendingApproval?.summary || 'The agent is requesting your approval to continue.'}
             </Text>
-            <View style={styles.approvalButtons}>
+
+            {Boolean(pendingApproval?.command) && (
+              <View style={[styles.approvalCodeBox, { backgroundColor: theme.raised, borderColor: theme.border }]}>
+                <Text style={[styles.approvalCodeText, { color: theme.text }]} numberOfLines={4}>
+                  {pendingApproval.command}
+                </Text>
+              </View>
+            )}
+
+            <View style={styles.approvalOptionsCol}>
               <TouchableOpacity
-                style={[styles.approvalRejectBtn, { borderColor: theme.border }]}
+                style={[styles.approvalStageBtn, { backgroundColor: theme.accent }]}
+                onPress={() => handleApprove('once')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.approvalStageBtnNum}>1</Text>
+                <Text style={styles.approvalStageBtnText}>Yes, allow this time</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => handleApprove('conversation')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>2</Text>
+                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, always in this conversation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => handleApprove('always')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>3</Text>
+                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, and always allow</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.approvalStageRejectBtn, { borderColor: theme.border }]}
                 onPress={handleReject}
                 activeOpacity={0.75}
               >
                 <Icon name="x" size={16} color={theme.danger || '#ef4444'} />
-                <Text style={[styles.approvalRejectText, { color: theme.danger || '#ef4444' }]}>Reject</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.approvalApproveBtn, { backgroundColor: theme.accent }]}
-                onPress={handleApprove}
-                activeOpacity={0.8}
-              >
-                <Icon name="check" size={16} color="#ffffff" />
-                <Text style={styles.approvalApproveText}>Approve</Text>
+                <Text style={[styles.approvalRejectText, { color: theme.danger || '#ef4444' }]}>No (Reject)</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3554,7 +3582,52 @@ const styles = StyleSheet.create({
   approvalSummary: {
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 32
+    marginBottom: 20
+  },
+  approvalCodeBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginBottom: 16
+  },
+  approvalCodeText: {
+    fontSize: 12,
+    fontFamily: fontMono,
+    lineHeight: 18
+  },
+  approvalOptionsCol: {
+    gap: 8,
+    marginTop: 4
+  },
+  approvalStageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14
+  },
+  approvalStageBtnNum: {
+    fontSize: 13,
+    fontFamily: fontBold,
+    color: '#ffffff',
+    width: 16
+  },
+  approvalStageBtnText: {
+    fontSize: 13,
+    fontFamily: fontSemiBold,
+    color: '#ffffff',
+    flex: 1
+  },
+  approvalStageRejectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4
   },
   approvalButtons: {
     flexDirection: 'row',

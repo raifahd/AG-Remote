@@ -50,3 +50,4 @@ else
   echo "  cd apps/mobile && eas build --platform android --profile preview --local"
   echo "When finished, copy the generated .apk file to $BUILD_DIR/ag-remote.apk"
 fi
+

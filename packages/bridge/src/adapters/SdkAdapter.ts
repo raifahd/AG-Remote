@@ -101,10 +101,11 @@ function detectAgyHub(): { port: number; token: string } | null {
       const pids = fs.readdirSync('/proc').filter((p) => /^\d+$/.test(p));
       for (const pid of pids) {
         try {
-          const cmd = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8');
-          if (cmd.includes('--hub-port')) {
+          const raw = fs.readFileSync(`/proc/${pid}/cmdline`);
+          const cmd = raw.toString('utf8').replace(/\0/g, ' ');
+          if (cmd.includes('--hub-port') || cmd.includes('language_server') || cmd.includes('agy')) {
             const portMatch = cmd.match(/--hub-port=(\d+)/);
-            const tokenMatch = cmd.match(/--csrf_token=([a-f0-9-]+)/);
+            const tokenMatch = cmd.match(/--(?:csrf_token|token)=([a-f0-9-]+)/i);
             if (portMatch && tokenMatch) {
               return { port: parseInt(portMatch[1] ?? '0', 10), token: tokenMatch[1] ?? '' };
             }
@@ -326,6 +327,14 @@ export class SdkAdapter implements AgentAdapter {
   private defaultSelectedModel: string | null = null;
   private cachedModels: ModelInfo[] = [];
   private queuedPrompts = new Map<string, ChatMessage[]>();
+  private readonly pendingInteractions = new Map<string, {
+    cascadeId: string;
+    trajectoryId: string;
+    stepIndex: number;
+    kind: string;
+    commandLine?: string;
+    absolutePathUri?: string;
+  }>();
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -487,12 +496,47 @@ export class SdkAdapter implements AgentAdapter {
                 ? `req_${lastStep.metadata.executionId}`
                 : `req_step_${lastIndex}`;
 
+              const interactionObj = (lastStep as Record<string, unknown>).requestedInteraction as Record<string, Record<string, unknown>> | undefined;
+              let interactionKind = 'permission';
+              let actionDesc = '';
+              let targetCmd = '';
+              let absPath = '';
+              if (interactionObj) {
+                const keys = Object.keys(interactionObj);
+                if (keys.length > 0) {
+                  interactionKind = keys[0] ?? 'permission';
+                  const detail = interactionObj[interactionKind] || {};
+                  actionDesc = (detail.actionDescription as string) || '';
+                  const res = detail.resource as { target?: string } | undefined;
+                  if (res?.target) targetCmd = res.target;
+                  if (detail.absolutePathUri) absPath = String(detail.absolutePathUri);
+                }
+              }
+              const runCmd = (lastStep as Record<string, unknown>).runCommand as { commandLine?: string; proposedCommandLine?: string } | undefined;
+              if (runCmd?.commandLine || runCmd?.proposedCommandLine) {
+                targetCmd = runCmd.commandLine || runCmd.proposedCommandLine || '';
+              }
+
+              const trajObj = (trajResp as Record<string, unknown>)?.trajectory as Record<string, unknown> | undefined;
+              const trajectoryId = trajObj ? String(trajObj.trajectoryId || '') : '';
+
+              this.pendingInteractions.set(stableReqId, {
+                cascadeId: activeId,
+                trajectoryId,
+                stepIndex: lastIndex,
+                kind: interactionKind,
+                commandLine: targetCmd,
+                absolutePathUri: absPath
+              });
+
               if (!currentPending || currentPending.requestId !== stableReqId) {
                 const approval: PendingApproval = {
                   requestId: stableReqId,
                   sessionId: activeId,
                   kind,
-                  summary: `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`,
+                  summary: actionDesc || (targetCmd ? `Run: ${targetCmd}` : `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`),
+                  command: targetCmd || undefined,
+                  scopes: ['once', 'conversation', 'always'],
                   createdAt: Date.now()
                 };
                 this.stateMachine.onAwaitingApproval(approval, activeId);
@@ -500,6 +544,7 @@ export class SdkAdapter implements AgentAdapter {
             } else {
               const currentPending = this.stateMachine.getPendingApproval(activeId);
               if (currentPending) {
+                this.pendingInteractions.delete(currentPending.requestId);
                 this.stateMachine.clearApproval(activeId);
               }
             }
@@ -814,73 +859,78 @@ export class SdkAdapter implements AgentAdapter {
     this.defaultSelectedModel = modelId;
   }
 
-  async approve(requestId?: string): Promise<void> {
+  async approve(requestId?: string, scope?: 'once' | 'conversation' | 'always'): Promise<void> {
     const activePending = this.stateMachine.getPendingApproval();
-    if (activePending) {
-      if (requestId && activePending.requestId !== requestId) {
-        throw new Error('STALE_REQUEST');
+    const reqId = requestId || activePending?.requestId;
+    const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
+    const pending = reqId ? this.pendingInteractions.get(reqId) : Array.from(this.pendingInteractions.values())[0];
+
+    if (pending) {
+      const scopeEnum = scope === 'always'
+        ? 'PERMISSION_SCOPE_ALWAYS'
+        : scope === 'conversation'
+        ? 'PERMISSION_SCOPE_CONVERSATION'
+        : 'PERMISSION_SCOPE_ONCE';
+
+      let interactionPayload: Record<string, unknown>;
+      if (pending.kind === 'permission') {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          permission: {
+            allow: true,
+            scope: scopeEnum
+          }
+        };
+      } else if (pending.kind === 'runCommand') {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          runCommand: {
+            confirm: true,
+            proposedCommandLine: pending.commandLine || '',
+            submittedCommandLine: pending.commandLine || ''
+          }
+        };
+      } else if (pending.kind === 'filePermission') {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          filePermission: {
+            allow: true,
+            scope: scopeEnum,
+            absolutePathUri: pending.absolutePathUri || ''
+          }
+        };
+      } else {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          [pending.kind]: { confirm: true }
+        };
       }
-      const kind = activePending.kind;
-      if (this.executeCommand) {
-        if (kind === 'terminal') {
-          try {
-            await this.executeCommand('antigravity.terminalCommand.accept');
-          } catch {
-            await this.executeCommand('antigravity.command.accept');
-          }
-        } else if (kind === 'edit') {
-          try {
-            await this.executeCommand('antigravity.agent.acceptAgentStep');
-          } catch {
-            await this.executeCommand('antigravity.command.accept');
-          }
-        } else {
-          try {
-            await this.executeCommand('antigravity.command.accept');
-          } catch {
-            await this.executeCommand('antigravity.agent.acceptAgentStep');
-          }
+
+      try {
+        await this.callRpc('HandleCascadeUserInteraction', {
+          cascadeId: pending.cascadeId,
+          interaction: interactionPayload
+        });
+      } catch (err) {
+        if (this.executeCommand) {
+          try { await this.executeCommand('antigravity.command.accept'); } catch {}
         }
       }
-      this.stateMachine.onGenerating(this.activeSessionId ?? undefined);
+
+      if (reqId) this.pendingInteractions.delete(reqId);
+      this.stateMachine.clearApproval(pending.cascadeId);
+      this.stateMachine.onGenerating(pending.cascadeId);
       return;
     }
 
-    if (requestId) {
-      const bgPending = this.stateMachine.findApprovalByRequestId(requestId);
-      if (bgPending && bgPending.sessionId) {
-        const targetSessionId = bgPending.sessionId;
-        await this.focusSession(targetSessionId);
-        await new Promise((r) => setTimeout(r, 150));
-        const rechecked = this.stateMachine.getPendingApproval(targetSessionId);
-        if (!rechecked || rechecked.requestId !== requestId) {
-          throw new Error('STALE_REQUEST');
-        }
-        const kind = rechecked.kind;
-        if (this.executeCommand) {
-          if (kind === 'terminal') {
-            try {
-              await this.executeCommand('antigravity.terminalCommand.accept');
-            } catch {
-              await this.executeCommand('antigravity.command.accept');
-            }
-          } else if (kind === 'edit') {
-            try {
-              await this.executeCommand('antigravity.agent.acceptAgentStep');
-            } catch {
-              await this.executeCommand('antigravity.command.accept');
-            }
-          } else {
-            try {
-              await this.executeCommand('antigravity.command.accept');
-            } catch {
-              await this.executeCommand('antigravity.agent.acceptAgentStep');
-            }
-          }
-        }
-        this.stateMachine.onGenerating(targetSessionId);
-        return;
-      }
+    if (this.executeCommand) {
+      try { await this.executeCommand('antigravity.command.accept'); } catch {}
+      this.stateMachine.onGenerating(targetSessionId);
+      return;
     }
 
     throw new Error('NO_PENDING_APPROVAL');
@@ -888,71 +938,58 @@ export class SdkAdapter implements AgentAdapter {
 
   async reject(requestId?: string): Promise<void> {
     const activePending = this.stateMachine.getPendingApproval();
-    if (activePending) {
-      if (requestId && activePending.requestId !== requestId) {
-        throw new Error('STALE_REQUEST');
+    const reqId = requestId || activePending?.requestId;
+    const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
+    const pending = reqId ? this.pendingInteractions.get(reqId) : Array.from(this.pendingInteractions.values())[0];
+
+    if (pending) {
+      let interactionPayload: Record<string, unknown>;
+      if (pending.kind === 'permission') {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          permission: {
+            allow: false,
+            scope: 'PERMISSION_SCOPE_ONCE'
+          }
+        };
+      } else if (pending.kind === 'runCommand') {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          runCommand: {
+            confirm: false
+          }
+        };
+      } else {
+        interactionPayload = {
+          trajectoryId: pending.trajectoryId,
+          stepIndex: pending.stepIndex,
+          [pending.kind]: { confirm: false }
+        };
       }
-      const kind = activePending.kind;
-      if (this.executeCommand) {
-        if (kind === 'terminal') {
-          try {
-            await this.executeCommand('antigravity.terminalCommand.reject');
-          } catch {
-            await this.executeCommand('antigravity.command.reject');
-          }
-        } else if (kind === 'edit') {
-          try {
-            await this.executeCommand('antigravity.agent.rejectAgentStep');
-          } catch {
-            await this.executeCommand('antigravity.command.reject');
-          }
-        } else {
-          try {
-            await this.executeCommand('antigravity.command.reject');
-          } catch {
-            await this.executeCommand('antigravity.agent.rejectAgentStep');
-          }
+
+      try {
+        await this.callRpc('HandleCascadeUserInteraction', {
+          cascadeId: pending.cascadeId,
+          interaction: interactionPayload
+        });
+      } catch (err) {
+        if (this.executeCommand) {
+          try { await this.executeCommand('antigravity.command.reject'); } catch {}
         }
       }
-      this.stateMachine.onIdle(this.activeSessionId ?? undefined);
+
+      if (reqId) this.pendingInteractions.delete(reqId);
+      this.stateMachine.clearApproval(pending.cascadeId);
+      this.stateMachine.onIdle(pending.cascadeId);
       return;
     }
 
-    if (requestId) {
-      const bgPending = this.stateMachine.findApprovalByRequestId(requestId);
-      if (bgPending && bgPending.sessionId) {
-        const targetSessionId = bgPending.sessionId;
-        await this.focusSession(targetSessionId);
-        await new Promise((r) => setTimeout(r, 150));
-        const rechecked = this.stateMachine.getPendingApproval(targetSessionId);
-        if (!rechecked || rechecked.requestId !== requestId) {
-          throw new Error('STALE_REQUEST');
-        }
-        const kind = rechecked.kind;
-        if (this.executeCommand) {
-          if (kind === 'terminal') {
-            try {
-              await this.executeCommand('antigravity.terminalCommand.reject');
-            } catch {
-              await this.executeCommand('antigravity.command.reject');
-            }
-          } else if (kind === 'edit') {
-            try {
-              await this.executeCommand('antigravity.agent.rejectAgentStep');
-            } catch {
-              await this.executeCommand('antigravity.command.reject');
-            }
-          } else {
-            try {
-              await this.executeCommand('antigravity.command.reject');
-            } catch {
-              await this.executeCommand('antigravity.agent.rejectAgentStep');
-            }
-          }
-        }
-        this.stateMachine.onIdle(targetSessionId);
-        return;
-      }
+    if (this.executeCommand) {
+      try { await this.executeCommand('antigravity.command.reject'); } catch {}
+      this.stateMachine.onIdle(targetSessionId);
+      return;
     }
 
     throw new Error('NO_PENDING_APPROVAL');
@@ -982,10 +1019,12 @@ export class SdkAdapter implements AgentAdapter {
     return new Promise<T>((resolve, reject) => {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        'Content-Length': String(Buffer.byteLength(body))
+        'Content-Length': String(Buffer.byteLength(body)),
+        'connect-protocol-version': '1'
       };
       if (this.csrfToken) {
         headers['x-codeium-csrf-token'] = this.csrfToken;
+        headers['x-csrf-token'] = this.csrfToken;
       }
 
       const req = mod.request(

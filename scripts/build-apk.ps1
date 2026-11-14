@@ -54,3 +54,4 @@ if (Test-Path $Gradlew) {
     Write-Host "  cd apps/mobile; eas build --platform android --profile preview --local"
     Write-Host "When finished, copy the generated .apk file to $BuildDir\ag-remote.apk"
 }
+

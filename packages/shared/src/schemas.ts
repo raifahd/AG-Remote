@@ -33,6 +33,8 @@ export const PendingApprovalSchema = z.object({
   sessionId: z.string().optional(),
   kind: ApprovalKindSchema,
   summary: z.string(),
+  command: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
   createdAt: z.number().int().nonnegative()
 }).strict();
 
@@ -77,7 +79,8 @@ export const PromptRequestSchema = z.object({
 }).strict();
 
 export const ApproveRequestSchema = z.object({
-  requestId: z.string().min(1)
+  requestId: z.string().min(1),
+  scope: z.enum(['once', 'conversation', 'always']).optional()
 }).strict();
 
 export const RejectRequestSchema = z.object({

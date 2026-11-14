@@ -132,8 +132,10 @@ export async function selectModel(profile, modelId, sessionId) {
   return authenticatedRequest(profile, '/v1/models/select', 'POST', { modelId, sessionId });
 }
 
-export async function sendApprove(profile, requestId) {
-  return authenticatedRequest(profile, '/v1/approve', 'POST', { requestId });
+export async function sendApprove(profile, requestId, scope) {
+  const body = { requestId };
+  if (scope) body.scope = scope;
+  return authenticatedRequest(profile, '/v1/approve', 'POST', body);
 }
 
 export async function sendReject(profile, requestId) {

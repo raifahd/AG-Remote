@@ -311,7 +311,7 @@ export class BridgeServer {
           return;
         }
         try {
-          await this.adapter.approve(parsed.data.requestId);
+          await this.adapter.approve(parsed.data.requestId, parsed.data.scope);
           res.json({ ok: true });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
