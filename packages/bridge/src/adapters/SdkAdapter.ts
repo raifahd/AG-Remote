@@ -335,6 +335,7 @@ export class SdkAdapter implements AgentAdapter {
     commandLine?: string;
     absolutePathUri?: string;
   }>();
+  private readonly handledInteractions = new Map<string, number>();
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
@@ -480,73 +481,90 @@ export class SdkAdapter implements AgentAdapter {
         try {
           const trajResp = await this.callRpc<GetCascadeTrajectoryResponse>('GetCascadeTrajectory', { cascadeId: activeId });
           const steps = trajResp?.trajectory?.steps ?? [];
-          if (steps.length > 0) {
-            const lastIndex = steps.length - 1;
-            const lastStep = steps[lastIndex];
-            if (lastStep?.status === 'CORTEX_STEP_STATUS_WAITING') {
-              const stepType = lastStep.type ?? '';
-              let kind: 'edit' | 'terminal' | 'tool' = 'tool';
-              if (stepType.includes('CODE_ACTION') || stepType.includes('EDIT_FILE')) {
-                kind = 'edit';
-              } else if (stepType.includes('COMMAND') || stepType.includes('TERMINAL')) {
-                kind = 'terminal';
+          let waitingIndex = -1;
+          let waitingStep: Record<string, unknown> | null = null;
+          for (let i = steps.length - 1; i >= 0; i--) {
+            const s = steps[i] as Record<string, unknown>;
+            const st = String(s?.status || '');
+            if (/WAITING/.test(st) || s?.requestedInteraction) {
+              waitingIndex = i;
+              waitingStep = s;
+              break;
+            }
+          }
+
+          if (waitingStep && waitingIndex >= 0) {
+            const stableReqId = `req_${activeId}_${waitingIndex}`;
+            const handledKey = `${activeId}_${waitingIndex}`;
+            const now = Date.now();
+            for (const [k, time] of this.handledInteractions) {
+              if (now - time > 60000) {
+                this.handledInteractions.delete(k);
               }
+            }
+
+            if (this.handledInteractions.has(stableReqId) || this.handledInteractions.has(handledKey)) {
               const currentPending = this.stateMachine.getPendingApproval(activeId);
-              const stableReqId = lastStep.metadata?.executionId
-                ? `req_${lastStep.metadata.executionId}`
-                : `req_step_${lastIndex}`;
-
-              const interactionObj = (lastStep as Record<string, unknown>).requestedInteraction as Record<string, Record<string, unknown>> | undefined;
-              let interactionKind = 'permission';
-              let actionDesc = '';
-              let targetCmd = '';
-              let absPath = '';
-              if (interactionObj) {
-                const keys = Object.keys(interactionObj);
-                if (keys.length > 0) {
-                  interactionKind = keys[0] ?? 'permission';
-                  const detail = interactionObj[interactionKind] || {};
-                  actionDesc = (detail.actionDescription as string) || '';
-                  const res = detail.resource as { target?: string } | undefined;
-                  if (res?.target) targetCmd = res.target;
-                  if (detail.absolutePathUri) absPath = String(detail.absolutePathUri);
-                }
-              }
-              const runCmd = (lastStep as Record<string, unknown>).runCommand as { commandLine?: string; proposedCommandLine?: string } | undefined;
-              if (runCmd?.commandLine || runCmd?.proposedCommandLine) {
-                targetCmd = runCmd.commandLine || runCmd.proposedCommandLine || '';
-              }
-
-              const trajObj = (trajResp as Record<string, unknown>)?.trajectory as Record<string, unknown> | undefined;
-              const trajectoryId = trajObj ? String(trajObj.trajectoryId || '') : '';
-
-              this.pendingInteractions.set(stableReqId, {
-                cascadeId: activeId,
-                trajectoryId,
-                stepIndex: lastIndex,
-                kind: interactionKind,
-                commandLine: targetCmd,
-                absolutePathUri: absPath
-              });
-
-              if (!currentPending || currentPending.requestId !== stableReqId) {
-                const approval: PendingApproval = {
-                  requestId: stableReqId,
-                  sessionId: activeId,
-                  kind,
-                  summary: actionDesc || (targetCmd ? `Run: ${targetCmd}` : `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`),
-                  command: targetCmd || undefined,
-                  scopes: ['once', 'conversation', 'always'],
-                  createdAt: Date.now()
-                };
-                this.stateMachine.onAwaitingApproval(approval, activeId);
-              }
-            } else {
-              const currentPending = this.stateMachine.getPendingApproval(activeId);
-              if (currentPending) {
+              if (currentPending && currentPending.requestId === stableReqId) {
                 this.pendingInteractions.delete(currentPending.requestId);
                 this.stateMachine.clearApproval(activeId);
+                this.stateMachine.onGenerating(activeId);
               }
+              return;
+            }
+
+            const interactionObj = waitingStep.requestedInteraction as Record<string, Record<string, unknown>> | undefined;
+            let interactionKind = 'permission';
+            let actionDesc = '';
+            let targetCmd = '';
+            let absPath = '';
+            if (interactionObj) {
+              const keys = Object.keys(interactionObj);
+              if (keys.length > 0) {
+                interactionKind = keys[0] ?? 'permission';
+                const detail = interactionObj[interactionKind] || {};
+                actionDesc = (detail.actionDescription as string) || '';
+                const res = detail.resource as { target?: string } | undefined;
+                if (res?.target) targetCmd = res.target;
+                if (detail.absolutePathUri) absPath = String(detail.absolutePathUri);
+              }
+            }
+            const runCmd = waitingStep.runCommand as { commandLine?: string; proposedCommandLine?: string } | undefined;
+            if (runCmd?.commandLine || runCmd?.proposedCommandLine) {
+              targetCmd = runCmd.commandLine || runCmd.proposedCommandLine || '';
+            }
+
+            const trajObj = (trajResp as Record<string, unknown>)?.trajectory as Record<string, unknown> | undefined;
+            const trajectoryId = trajObj ? String(trajObj.trajectoryId || '') : '';
+
+            this.pendingInteractions.set(stableReqId, {
+              cascadeId: activeId,
+              trajectoryId,
+              stepIndex: waitingIndex,
+              kind: interactionKind,
+              commandLine: targetCmd,
+              absolutePathUri: absPath
+            });
+
+            const currentPending = this.stateMachine.getPendingApproval(activeId);
+            if (!currentPending || currentPending.requestId !== stableReqId) {
+              const approval: PendingApproval = {
+                requestId: stableReqId,
+                sessionId: activeId,
+                kind: interactionKind === 'runCommand' || interactionKind === 'command' ? 'terminal' : interactionKind === 'filePermission' ? 'edit' : 'tool',
+                summary: actionDesc || (targetCmd ? `Run: ${targetCmd}` : `Action requires confirmation in ${this.stateMachine.getSessionTitle(activeId) ?? 'session'}`),
+                command: targetCmd || undefined,
+                scopes: ['once', 'conversation', 'always'],
+                createdAt: Date.now()
+              };
+              this.stateMachine.onAwaitingApproval(approval, activeId);
+            }
+          } else {
+            const currentPending = this.stateMachine.getPendingApproval(activeId);
+            if (currentPending) {
+              this.pendingInteractions.delete(currentPending.requestId);
+              this.stateMachine.clearApproval(activeId);
+              this.stateMachine.onGenerating(activeId);
             }
           }
         } catch {}
@@ -863,136 +881,158 @@ export class SdkAdapter implements AgentAdapter {
     const activePending = this.stateMachine.getPendingApproval();
     const reqId = requestId || activePending?.requestId;
     const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
-    const pending = reqId ? this.pendingInteractions.get(reqId) : Array.from(this.pendingInteractions.values())[0];
+    const pending = (reqId ? this.pendingInteractions.get(reqId) : undefined) || Array.from(this.pendingInteractions.values())[0];
 
-    if (pending) {
-      const scopeEnum = scope === 'always'
-        ? 'PERMISSION_SCOPE_ALWAYS'
-        : scope === 'conversation'
-        ? 'PERMISSION_SCOPE_CONVERSATION'
-        : 'PERMISSION_SCOPE_ONCE';
-
-      let interactionPayload: Record<string, unknown>;
-      if (pending.kind === 'permission') {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          permission: {
-            allow: true,
-            scope: scopeEnum
-          }
-        };
-      } else if (pending.kind === 'runCommand') {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          runCommand: {
-            confirm: true,
-            proposedCommandLine: pending.commandLine || '',
-            submittedCommandLine: pending.commandLine || ''
-          }
-        };
-      } else if (pending.kind === 'filePermission') {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          filePermission: {
-            allow: true,
-            scope: scopeEnum,
-            absolutePathUri: pending.absolutePathUri || ''
-          }
-        };
-      } else {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          [pending.kind]: { confirm: true }
-        };
+    if (!pending) {
+      if (reqId && (this.handledInteractions.has(reqId) || Array.from(this.handledInteractions.keys()).some((k) => k.includes(reqId)))) {
+        return;
       }
+      if (this.executeCommand) {
+        try { await this.executeCommand('antigravity.command.accept'); } catch {}
+        this.stateMachine.onGenerating(targetSessionId);
+        return;
+      }
+      if (activePending) {
+        this.stateMachine.clearApproval(activePending.sessionId || this.activeSessionId || undefined);
+        this.stateMachine.onGenerating(activePending.sessionId || this.activeSessionId || undefined);
+        return;
+      }
+      return;
+    }
 
-      try {
-        await this.callRpc('HandleCascadeUserInteraction', {
-          cascadeId: pending.cascadeId,
-          interaction: interactionPayload
-        });
-      } catch (err) {
-        if (this.executeCommand) {
-          try { await this.executeCommand('antigravity.command.accept'); } catch {}
+    const scopeVal = scope === 'always'
+      ? 'PERMISSION_SCOPE_GLOBAL'
+      : scope === 'conversation'
+      ? 'PERMISSION_SCOPE_CONVERSATION'
+      : 'PERMISSION_SCOPE_ONCE';
+
+    let interactionPayload: Record<string, unknown>;
+    if (pending.kind === 'permission') {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        permission: {
+          allow: true,
+          scope: scopeVal
         }
+      };
+    } else if (pending.kind === 'runCommand') {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        runCommand: {
+          confirm: true,
+          proposedCommandLine: pending.commandLine || '',
+          submittedCommandLine: pending.commandLine || ''
+        }
+      };
+    } else if (pending.kind === 'filePermission') {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        filePermission: {
+          allow: true,
+          scope: scopeVal,
+          absolutePathUri: pending.absolutePathUri || ''
+        }
+      };
+    } else {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        [pending.kind]: { confirm: true }
+      };
+    }
+
+    this.handledInteractions.set(`${pending.cascadeId}_${pending.stepIndex}`, Date.now());
+    if (reqId) {
+      this.handledInteractions.set(reqId, Date.now());
+      this.pendingInteractions.delete(reqId);
+    }
+
+    try {
+      await this.callRpc('HandleCascadeUserInteraction', {
+        cascadeId: pending.cascadeId,
+        interaction: interactionPayload
+      });
+    } catch (err) {
+      if (this.executeCommand) {
+        try { await this.executeCommand('antigravity.command.accept'); } catch {}
       }
-
-      if (reqId) this.pendingInteractions.delete(reqId);
-      this.stateMachine.clearApproval(pending.cascadeId);
-      this.stateMachine.onGenerating(pending.cascadeId);
-      return;
     }
 
-    if (this.executeCommand) {
-      try { await this.executeCommand('antigravity.command.accept'); } catch {}
-      this.stateMachine.onGenerating(targetSessionId);
-      return;
-    }
-
-    throw new Error('NO_PENDING_APPROVAL');
+    this.stateMachine.clearApproval(pending.cascadeId);
+    this.stateMachine.onGenerating(pending.cascadeId);
   }
 
   async reject(requestId?: string): Promise<void> {
     const activePending = this.stateMachine.getPendingApproval();
     const reqId = requestId || activePending?.requestId;
     const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
-    const pending = reqId ? this.pendingInteractions.get(reqId) : Array.from(this.pendingInteractions.values())[0];
+    const pending = (reqId ? this.pendingInteractions.get(reqId) : undefined) || Array.from(this.pendingInteractions.values())[0];
 
-    if (pending) {
-      let interactionPayload: Record<string, unknown>;
-      if (pending.kind === 'permission') {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          permission: {
-            allow: false,
-            scope: 'PERMISSION_SCOPE_ONCE'
-          }
-        };
-      } else if (pending.kind === 'runCommand') {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          runCommand: {
-            confirm: false
-          }
-        };
-      } else {
-        interactionPayload = {
-          trajectoryId: pending.trajectoryId,
-          stepIndex: pending.stepIndex,
-          [pending.kind]: { confirm: false }
-        };
+    if (!pending) {
+      if (reqId && (this.handledInteractions.has(reqId) || Array.from(this.handledInteractions.keys()).some((k) => k.includes(reqId)))) {
+        return;
       }
+      if (this.executeCommand) {
+        try { await this.executeCommand('antigravity.command.reject'); } catch {}
+        this.stateMachine.onIdle(targetSessionId);
+        return;
+      }
+      if (activePending) {
+        this.stateMachine.clearApproval(activePending.sessionId || this.activeSessionId || undefined);
+        this.stateMachine.onIdle(activePending.sessionId || this.activeSessionId || undefined);
+        return;
+      }
+      return;
+    }
 
-      try {
-        await this.callRpc('HandleCascadeUserInteraction', {
-          cascadeId: pending.cascadeId,
-          interaction: interactionPayload
-        });
-      } catch (err) {
-        if (this.executeCommand) {
-          try { await this.executeCommand('antigravity.command.reject'); } catch {}
+    let interactionPayload: Record<string, unknown>;
+    if (pending.kind === 'permission') {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        permission: {
+          allow: false,
+          scope: 'PERMISSION_SCOPE_ONCE'
         }
+      };
+    } else if (pending.kind === 'runCommand') {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        runCommand: {
+          confirm: false
+        }
+      };
+    } else {
+      interactionPayload = {
+        trajectoryId: pending.trajectoryId,
+        stepIndex: pending.stepIndex,
+        [pending.kind]: { confirm: false }
+      };
+    }
+
+    this.handledInteractions.set(`${pending.cascadeId}_${pending.stepIndex}`, Date.now());
+    if (reqId) {
+      this.handledInteractions.set(reqId, Date.now());
+      this.pendingInteractions.delete(reqId);
+    }
+
+    try {
+      await this.callRpc('HandleCascadeUserInteraction', {
+        cascadeId: pending.cascadeId,
+        interaction: interactionPayload
+      });
+    } catch (err) {
+      if (this.executeCommand) {
+        try { await this.executeCommand('antigravity.command.reject'); } catch {}
       }
-
-      if (reqId) this.pendingInteractions.delete(reqId);
-      this.stateMachine.clearApproval(pending.cascadeId);
-      this.stateMachine.onIdle(pending.cascadeId);
-      return;
     }
 
-    if (this.executeCommand) {
-      try { await this.executeCommand('antigravity.command.reject'); } catch {}
-      this.stateMachine.onIdle(targetSessionId);
-      return;
-    }
-
-    throw new Error('NO_PENDING_APPROVAL');
+    this.stateMachine.clearApproval(pending.cascadeId);
+    this.stateMachine.onIdle(pending.cascadeId);
   }
 
   async stop(sessionId?: string): Promise<void> {

@@ -1732,6 +1732,9 @@ export default function ChatScreen() {
       await sendApprove(profile, approval.requestId, scope);
       await loadMessages(currentSessionId || undefined);
     } catch (err) {
+      if (String(err?.message).includes('NO_PENDING_APPROVAL')) {
+        return;
+      }
       setPendingApproval(approval);
       setAgentStatus('awaiting_approval');
       alert(err.message || 'Failed to approve');
@@ -1747,6 +1750,9 @@ export default function ChatScreen() {
       await sendReject(profile, approval.requestId);
       await loadMessages(currentSessionId || undefined);
     } catch (err) {
+      if (String(err?.message).includes('NO_PENDING_APPROVAL')) {
+        return;
+      }
       setPendingApproval(approval);
       setAgentStatus('awaiting_approval');
       alert(err.message || 'Failed to reject');

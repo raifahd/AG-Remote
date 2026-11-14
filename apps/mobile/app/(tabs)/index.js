@@ -104,23 +104,31 @@ export default function HomeScreen() {
     return () => ws.close();
   }, [profile, loadData]);
 
-  const handleApprove = async () => {
+  const handleApprove = async (scope = 'once') => {
     if (!profile || !state?.pendingApproval) return;
+    const reqId = state.pendingApproval.requestId;
     try {
-      await sendApprove(profile, state.pendingApproval.requestId);
+      await sendApprove(profile, reqId, scope);
       await loadData();
     } catch (err) {
-      alert(err.message || 'Approval failed');
+      if (!String(err?.message).includes('NO_PENDING_APPROVAL')) {
+        alert(err.message || 'Approval failed');
+      }
+      await loadData();
     }
   };
 
   const handleReject = async () => {
     if (!profile || !state?.pendingApproval) return;
+    const reqId = state.pendingApproval.requestId;
     try {
-      await sendReject(profile, state.pendingApproval.requestId);
+      await sendReject(profile, reqId);
       await loadData();
     } catch (err) {
-      alert(err.message || 'Rejection failed');
+      if (!String(err?.message).includes('NO_PENDING_APPROVAL')) {
+        alert(err.message || 'Rejection failed');
+      }
+      await loadData();
     }
   };
 
@@ -307,31 +315,41 @@ export default function HomeScreen() {
                 <Text style={[styles.codeText, { color: theme.text }]}>{approval.command}</Text>
               </View>
             )}
-            <View style={styles.actionRow}>
+            <View style={styles.approvalOptionsCol}>
               <TouchableOpacity
-                style={[
-                  styles.primaryButton,
-                  { backgroundColor: theme.accent },
-                  holding && styles.holdingButton
-                ]}
-                onPressIn={() => setHolding(true)}
-                onPressOut={() => {
-                  setHolding(false);
-                  handleApprove();
-                }}
-                activeOpacity={0.9}
+                style={[styles.approvalStageBtn, { backgroundColor: theme.accent }]}
+                onPress={() => handleApprove('once')}
+                activeOpacity={0.8}
               >
-                <Icon name="check" size={18} color="#ffffff" />
-                <Text style={styles.primaryButtonText}>
-                  {holding ? 'Release to approve' : 'Hold to approve'}
-                </Text>
+                <Text style={styles.approvalStageBtnNum}>1</Text>
+                <Text style={styles.approvalStageBtnText}>Yes, allow this time</Text>
               </TouchableOpacity>
+
               <TouchableOpacity
-                style={[styles.secondaryButton, { backgroundColor: theme.raised, borderColor: theme.border }]}
-                onPress={handleReject}
+                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => handleApprove('conversation')}
+                activeOpacity={0.8}
               >
-                <Icon name="x" size={18} color={theme.text} />
-                <Text style={[styles.secondaryButtonText, { color: theme.text }]}>Reject</Text>
+                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>2</Text>
+                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, always in this conversation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
+                onPress={() => handleApprove('always')}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>3</Text>
+                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, and always allow</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.approvalStageRejectBtn, { borderColor: theme.border }]}
+                onPress={handleReject}
+                activeOpacity={0.75}
+              >
+                <Icon name="x" size={16} color={theme.danger || '#ef4444'} />
+                <Text style={[styles.approvalRejectText, { color: theme.danger || '#ef4444' }]}>No (Reject)</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -649,6 +667,44 @@ const styles = StyleSheet.create({
   },
   secondaryButtonText: {
     fontSize: 12,
+    fontFamily: fontSemiBold
+  },
+  approvalOptionsCol: {
+    gap: 8,
+    marginTop: 8
+  },
+  approvalStageBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 14
+  },
+  approvalStageBtnNum: {
+    fontSize: 13,
+    fontFamily: fontBold,
+    color: '#ffffff',
+    width: 16
+  },
+  approvalStageBtnText: {
+    fontSize: 13,
+    fontFamily: fontSemiBold,
+    color: '#ffffff',
+    flex: 1
+  },
+  approvalStageRejectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 4
+  },
+  approvalRejectText: {
+    fontSize: 13,
     fontFamily: fontSemiBold
   },
   quickPromptCard: {
