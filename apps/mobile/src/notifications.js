@@ -1,12 +1,30 @@
 import { Platform, Vibration } from 'react-native';
-import * as Notifications from 'expo-notifications';
 
+let notificationsModule = null;
 let isConfigured = false;
+
+async function getNotifications() {
+  if (notificationsModule !== null) return notificationsModule;
+  try {
+    notificationsModule = await import('expo-notifications');
+    return notificationsModule;
+  } catch (err) {
+    console.warn('Native notifications unavailable in this runtime:', err?.message || err);
+    notificationsModule = false;
+    return false;
+  }
+}
 
 export async function setupNativeNotifications() {
   if (isConfigured) return;
 
   try {
+    const Notifications = await getNotifications();
+    if (!Notifications) {
+      isConfigured = true;
+      return;
+    }
+
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -42,13 +60,16 @@ export async function setupNativeNotifications() {
 
 export async function showNativeNotification({ title, body, data = {}, isUrgent = false }) {
   try {
-    await setupNativeNotifications();
-
     if (isUrgent) {
       Vibration.vibrate([0, 250, 150, 250]);
     } else {
       Vibration.vibrate(200);
     }
+
+    const Notifications = await getNotifications();
+    if (!Notifications) return;
+
+    await setupNativeNotifications();
 
     const channelId = isUrgent ? 'ag-remote-approvals' : 'ag-remote-updates';
 
@@ -59,14 +80,14 @@ export async function showNativeNotification({ title, body, data = {}, isUrgent 
         data,
         sound: true,
         priority: isUrgent
-          ? Notifications.AndroidNotificationPriority.MAX
-          : Notifications.AndroidNotificationPriority.HIGH,
+          ? Notifications.AndroidNotificationPriority?.MAX
+          : Notifications.AndroidNotificationPriority?.HIGH,
         ...(Platform.OS === 'android' ? { channelId } : {})
       },
       trigger: null
     });
   } catch (err) {
-    console.warn('Failed to schedule local notification:', err);
+    console.warn('Failed to schedule local notification:', err?.message || err);
   }
 }
 
