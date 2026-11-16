@@ -25,7 +25,23 @@ export const RunStatusSchema = z.enum([
 export const ApprovalKindSchema = z.enum([
   'edit',
   'terminal',
-  'tool'
+  'tool',
+  'permission',
+  'runCommand',
+  'filePermission',
+  'openBrowserUrl',
+  'captureBrowserScreenshot',
+  'executeBrowserJavascript',
+  'mcp',
+  'readUrlContent',
+  'ask_question'
+]);
+
+export const ApprovalOptionSchema = z.enum([
+  'allow_once',
+  'allow_conversation',
+  'always_allow',
+  'deny'
 ]);
 
 export const PendingApprovalSchema = z.object({
@@ -34,6 +50,16 @@ export const PendingApprovalSchema = z.object({
   kind: ApprovalKindSchema,
   summary: z.string(),
   command: z.string().optional(),
+  commandLine: z.string().optional(),
+  cwd: z.string().optional(),
+  absolutePathUri: z.string().optional(),
+  diff: z.string().optional(),
+  question: z.string().optional(),
+  options: z.array(z.string()).optional(),
+  isMultiSelect: z.boolean().optional(),
+  actions: z.array(ApprovalOptionSchema).optional(),
+  stepIndex: z.number().int().nonnegative().optional(),
+  detail: z.string().optional(),
   scopes: z.array(z.string()).optional(),
   createdAt: z.number().int().nonnegative()
 }).strict();
@@ -80,11 +106,14 @@ export const PromptRequestSchema = z.object({
 
 export const ApproveRequestSchema = z.object({
   requestId: z.string().min(1),
-  scope: z.enum(['once', 'conversation', 'always']).optional()
+  scope: z.enum(['once', 'conversation', 'always']).optional(),
+  option: ApprovalOptionSchema.optional(),
+  response: z.string().optional()
 }).strict();
 
 export const RejectRequestSchema = z.object({
-  requestId: z.string().min(1)
+  requestId: z.string().min(1),
+  reason: z.string().optional()
 }).strict();
 
 export const HealthResponseSchema = z.object({

@@ -176,3 +176,43 @@ export class TokenManager {
   }
 }
 
+export interface PairingCode {
+  code: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export class PairingManager {
+  private readonly codes = new Map<string, PairingCode>();
+  private readonly ttlMs = 5 * 60 * 1000;
+
+  generateCode(): string {
+    const code = crypto.randomBytes(16).toString('hex');
+    const now = Date.now();
+    this.codes.set(code, {
+      code,
+      createdAt: now,
+      expiresAt: now + this.ttlMs
+    });
+    return code;
+  }
+
+  verifyAndConsume(code: string): boolean {
+    const entry = this.codes.get(code);
+    if (!entry) {
+      return false;
+    }
+    this.codes.delete(code);
+    if (Date.now() > entry.expiresAt) {
+      return false;
+    }
+    return true;
+  }
+
+  peekValid(code: string): boolean {
+    const entry = this.codes.get(code);
+    if (!entry) return false;
+    return Date.now() <= entry.expiresAt;
+  }
+}
+

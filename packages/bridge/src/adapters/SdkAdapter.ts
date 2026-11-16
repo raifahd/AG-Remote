@@ -15,6 +15,12 @@ import {
 } from '@ag-remote/shared';
 import { AgentAdapter, Disposable } from './AgentAdapter.js';
 import { AgentStateMachine } from '../stateMachine.js';
+import { buildInteraction } from './interactionBuilder.js';
+import {
+  parseServerCommandLine,
+  rankLanguageServers,
+  Discover
+} from './lsDiscovery.js';
 
 export interface SdkAdapterConfig {
   lsPort?: number | undefined;
@@ -23,6 +29,9 @@ export interface SdkAdapterConfig {
   pollIntervalMs?: number | undefined;
   executeCommand?: ((command: string, ...args: unknown[]) => Promise<unknown>) | undefined;
   brainDir?: string | null | undefined;
+  workspace?: string | undefined;
+  ownerPid?: number | undefined;
+  discover?: Discover | undefined;
 }
 
 interface RawTrajectorySummary {
@@ -95,22 +104,55 @@ interface GetUserStatusResponse {
   };
 }
 
-function detectAgyHub(): { port: number; token: string } | null {
+function detectAgyHub(workspace?: string, ownerPid?: number): { port: number; token: string } | null {
   try {
     if (process.platform === 'linux' && fs.existsSync('/proc')) {
       const pids = fs.readdirSync('/proc').filter((p) => /^\d+$/.test(p));
+      const candidates: Array<{
+        pid: number;
+        ppid: number | undefined;
+        port: number;
+        token: string;
+        kind?: 'language_server' | 'agy' | undefined;
+        attached?: boolean | undefined;
+        addDirs?: string[] | undefined;
+      }> = [];
+
       for (const pid of pids) {
         try {
           const raw = fs.readFileSync(`/proc/${pid}/cmdline`);
           const cmd = raw.toString('utf8').replace(/\0/g, ' ');
           if (cmd.includes('--hub-port') || cmd.includes('language_server') || cmd.includes('agy')) {
+            const parsed = parseServerCommandLine(cmd);
             const portMatch = cmd.match(/--hub-port=(\d+)/);
-            const tokenMatch = cmd.match(/--(?:csrf_token|token)=([a-f0-9-]+)/i);
-            if (portMatch && tokenMatch) {
-              return { port: parseInt(portMatch[1] ?? '0', 10), token: tokenMatch[1] ?? '' };
+            const tokenMatch = parsed?.token || cmd.match(/--(?:csrf_token|token)=([a-f0-9-]+)/i)?.[1];
+            const port = portMatch ? parseInt(portMatch[1] ?? '0', 10) : 0;
+            if (tokenMatch) {
+              let ppid: number | undefined = undefined;
+              try {
+                const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+                ppid = parseInt(stat.split(' ')[3] || '0', 10);
+              } catch {}
+              candidates.push({
+                pid: parseInt(pid, 10),
+                ppid,
+                port: port || 44045,
+                token: tokenMatch,
+                kind: parsed?.kind,
+                attached: parsed?.attached,
+                addDirs: parsed?.addDirs
+              });
             }
           }
         } catch {}
+      }
+
+      if (candidates.length > 0) {
+        const ranked = rankLanguageServers(candidates, workspace, ownerPid);
+        const best = ranked[0];
+        if (best) {
+          return { port: best.port, token: best.token };
+        }
       }
     }
   } catch {}
@@ -339,7 +381,7 @@ export class SdkAdapter implements AgentAdapter {
 
   constructor(stateMachine: AgentStateMachine, config: SdkAdapterConfig = {}) {
     this.stateMachine = stateMachine;
-    const detected = detectAgyHub();
+    const detected = detectAgyHub(config.workspace, config.ownerPid);
     this.lsPort = config.lsPort ?? (process.env.ANTIGRAVITY_LS_ADDRESS ? parseInt(process.env.ANTIGRAVITY_LS_ADDRESS.split(':')[1] ?? '44045', 10) : (detected?.port ?? 44045));
     this.csrfToken = config.csrfToken ?? (process.env.ANTIGRAVITY_CSRF_TOKEN ?? (detected?.token ?? ''));
     this.useTls = config.useTls ?? false;
@@ -877,7 +919,7 @@ export class SdkAdapter implements AgentAdapter {
     this.defaultSelectedModel = modelId;
   }
 
-  async approve(requestId?: string, scope?: 'once' | 'conversation' | 'always'): Promise<void> {
+  async approve(requestId?: string, scope?: 'once' | 'conversation' | 'always', response?: string): Promise<void> {
     const activePending = this.stateMachine.getPendingApproval();
     const reqId = requestId || activePending?.requestId;
     const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
@@ -900,49 +942,20 @@ export class SdkAdapter implements AgentAdapter {
       return;
     }
 
-    const scopeVal = scope === 'always'
-      ? 'PERMISSION_SCOPE_GLOBAL'
-      : scope === 'conversation'
-      ? 'PERMISSION_SCOPE_CONVERSATION'
-      : 'PERMISSION_SCOPE_ONCE';
-
-    let interactionPayload: Record<string, unknown>;
-    if (pending.kind === 'permission') {
-      interactionPayload = {
+    const interactionPayload = buildInteraction(
+      {
         trajectoryId: pending.trajectoryId,
         stepIndex: pending.stepIndex,
-        permission: {
-          allow: true,
-          scope: scopeVal
-        }
-      };
-    } else if (pending.kind === 'runCommand') {
-      interactionPayload = {
-        trajectoryId: pending.trajectoryId,
-        stepIndex: pending.stepIndex,
-        runCommand: {
-          confirm: true,
-          proposedCommandLine: pending.commandLine || '',
-          submittedCommandLine: pending.commandLine || ''
-        }
-      };
-    } else if (pending.kind === 'filePermission') {
-      interactionPayload = {
-        trajectoryId: pending.trajectoryId,
-        stepIndex: pending.stepIndex,
-        filePermission: {
-          allow: true,
-          scope: scopeVal,
-          absolutePathUri: pending.absolutePathUri || ''
-        }
-      };
-    } else {
-      interactionPayload = {
-        trajectoryId: pending.trajectoryId,
-        stepIndex: pending.stepIndex,
-        [pending.kind]: { confirm: true }
-      };
-    }
+        kind: pending.kind,
+        commandLine: pending.commandLine,
+        absolutePathUri: pending.absolutePathUri
+      },
+      {
+        allow: true,
+        scope: scope === 'conversation' || scope === 'always' ? 'conversation' : 'once',
+        response
+      }
+    );
 
     this.handledInteractions.set(`${pending.cascadeId}_${pending.stepIndex}`, Date.now());
     if (reqId) {
@@ -965,7 +978,7 @@ export class SdkAdapter implements AgentAdapter {
     this.stateMachine.onGenerating(pending.cascadeId);
   }
 
-  async reject(requestId?: string): Promise<void> {
+  async reject(requestId?: string, reason?: string): Promise<void> {
     const activePending = this.stateMachine.getPendingApproval();
     const reqId = requestId || activePending?.requestId;
     const targetSessionId = activePending?.sessionId || this.activeSessionId || undefined;
@@ -988,31 +1001,19 @@ export class SdkAdapter implements AgentAdapter {
       return;
     }
 
-    let interactionPayload: Record<string, unknown>;
-    if (pending.kind === 'permission') {
-      interactionPayload = {
+    const interactionPayload = buildInteraction(
+      {
         trajectoryId: pending.trajectoryId,
         stepIndex: pending.stepIndex,
-        permission: {
-          allow: false,
-          scope: 'PERMISSION_SCOPE_ONCE'
-        }
-      };
-    } else if (pending.kind === 'runCommand') {
-      interactionPayload = {
-        trajectoryId: pending.trajectoryId,
-        stepIndex: pending.stepIndex,
-        runCommand: {
-          confirm: false
-        }
-      };
-    } else {
-      interactionPayload = {
-        trajectoryId: pending.trajectoryId,
-        stepIndex: pending.stepIndex,
-        [pending.kind]: { confirm: false }
-      };
-    }
+        kind: pending.kind,
+        commandLine: pending.commandLine,
+        absolutePathUri: pending.absolutePathUri
+      },
+      {
+        allow: false,
+        instruction: reason
+      }
+    );
 
     this.handledInteractions.set(`${pending.cascadeId}_${pending.stepIndex}`, Date.now());
     if (reqId) {
@@ -1025,7 +1026,7 @@ export class SdkAdapter implements AgentAdapter {
         cascadeId: pending.cascadeId,
         interaction: interactionPayload
       });
-    } catch (err) {
+    } catch {
       if (this.executeCommand) {
         try { await this.executeCommand('antigravity.command.reject'); } catch {}
       }

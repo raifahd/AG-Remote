@@ -202,7 +202,7 @@ export class FakeAdapter implements AgentAdapter {
     this.currentModelId = modelId;
   }
 
-  async approve(requestId?: string, _scope?: 'once' | 'conversation' | 'always'): Promise<void> {
+  async approve(requestId?: string, _scope?: 'once' | 'conversation' | 'always', _response?: string): Promise<void> {
     const activePending = this.getPendingApproval(this.activeSessionId ?? undefined);
 
     if (activePending) {
@@ -258,7 +258,7 @@ export class FakeAdapter implements AgentAdapter {
     throw new Error('NO_PENDING_APPROVAL');
   }
 
-  async reject(requestId?: string): Promise<void> {
+  async reject(requestId?: string, _reason?: string): Promise<void> {
     const activePending = this.getPendingApproval(this.activeSessionId ?? undefined);
 
     if (activePending) {

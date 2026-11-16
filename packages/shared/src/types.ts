@@ -4,6 +4,7 @@ import {
   ApiErrorSchema,
   RunStatusSchema,
   ApprovalKindSchema,
+  ApprovalOptionSchema,
   PendingApprovalSchema,
   SessionSummarySchema,
   AgentStateSchema,
@@ -31,6 +32,7 @@ export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type ApiError = z.infer<typeof ApiErrorSchema>;
 export type RunStatus = z.infer<typeof RunStatusSchema>;
 export type ApprovalKind = z.infer<typeof ApprovalKindSchema>;
+export type ApprovalOption = z.infer<typeof ApprovalOptionSchema>;
 export type PendingApproval = z.infer<typeof PendingApprovalSchema>;
 export type SessionSummary = z.infer<typeof SessionSummarySchema>;
 export type AgentState = z.infer<typeof AgentStateSchema>;

@@ -16,7 +16,7 @@ import {
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
-import { RateLimiter, TokenManager, constantTimeCompare } from './auth.js';
+import { RateLimiter, TokenManager, PairingManager, constantTimeCompare } from './auth.js';
 import { AgentAdapter } from './adapters/AgentAdapter.js';
 import { NtfyNotifier } from './notifier.js';
 import { getMobileVersionState } from './versioning.js';
@@ -35,6 +35,7 @@ export class BridgeServer {
   private readonly adapter: AgentAdapter;
   private readonly tokenManager: TokenManager;
   private readonly rateLimiter: RateLimiter;
+  private readonly pairingManager: PairingManager;
   private readonly notifier?: NtfyNotifier | undefined;
   private readonly app: express.Express;
   private httpServer: http.Server | null = null;
@@ -47,7 +48,8 @@ export class BridgeServer {
     adapter: AgentAdapter,
     tokenManager: TokenManager,
     rateLimiter = new RateLimiter(),
-    notifier?: NtfyNotifier | undefined
+    notifier?: NtfyNotifier | undefined,
+    pairingManager = new PairingManager()
   ) {
     this.config = config;
     this.uploadDir = config.uploadDir || path.join(process.cwd(), '.ag-remote', 'uploads');
@@ -56,6 +58,7 @@ export class BridgeServer {
     this.tokenManager = tokenManager;
     this.rateLimiter = rateLimiter;
     this.notifier = notifier;
+    this.pairingManager = pairingManager;
     this.app = express();
     this.configureApp();
   }
@@ -109,6 +112,27 @@ export class BridgeServer {
 
     this.app.get('/version', handleVersionCheck);
     this.app.get('/app/download', handleDownloadApk);
+
+    this.app.get('/pair', (req: Request, res: Response) => {
+      const t = typeof req.query.t === 'string' ? req.query.t : '';
+      if (!t || !this.pairingManager.peekValid(t)) {
+        res.status(400).json(this.makeError('UNAUTHORIZED', 'Invalid or expired pairing code'));
+        return;
+      }
+
+      const accept = req.headers.accept || '';
+      if (accept.includes('text/html')) {
+        res.redirect(302, `/app?token=${encodeURIComponent(t)}`);
+        return;
+      }
+
+      if (this.pairingManager.verifyAndConsume(t)) {
+        const sessionToken = this.tokenManager.getToken();
+        res.json({ token: sessionToken });
+      } else {
+        res.status(400).json(this.makeError('UNAUTHORIZED', 'Pairing code already used'));
+      }
+    });
 
     const v1Router = express.Router();
     v1Router.use(this.authMiddleware.bind(this));
@@ -532,6 +556,10 @@ export class BridgeServer {
 
   getApp(): express.Express {
     return this.app;
+  }
+
+  getPairingManager(): PairingManager {
+    return this.pairingManager;
   }
 }
 

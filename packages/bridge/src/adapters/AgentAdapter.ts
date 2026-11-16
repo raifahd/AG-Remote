@@ -19,8 +19,8 @@ export interface AgentAdapter {
   sendPrompt(text: string, sessionId?: string, modelId?: string): Promise<void>;
   getModels(sessionId?: string): Promise<ModelsResponse>;
   setModel(modelId: string, sessionId?: string): Promise<void>;
-  approve(requestId?: string, scope?: 'once' | 'conversation' | 'always'): Promise<void>;
-  reject(requestId?: string): Promise<void>;
+  approve(requestId?: string, scope?: 'once' | 'conversation' | 'always', response?: string): Promise<void>;
+  reject(requestId?: string, reason?: string): Promise<void>;
   stop(sessionId?: string): Promise<void>;
   onEvent(handler: (e: AgentEvent) => void): Disposable;
 }
