@@ -41,6 +41,8 @@ These rules are binding.
 - **R-21**: Do not weaken any requirement in section 9 for convenience. If one blocks progress, ask the owner.
 - **R-22**: Do not run destructive commands (deleting outside the repository, force pushes, system configuration changes, installing system services) without explicit approval.
 - **R-23**: Do not modify Antigravity installation files. The bridge works only through supported extension APIs, the SDK, and the debug port.
+- **R-28**: Terminal module: never pass command strings through a shell. Always use `spawn` with an argv array. Reject shell metacharacters.
+- **R-29**: File browser: always resolve and validate paths against `agRemote.fsBrowserRoot` before serving any content.
 
 ## Communication
 
