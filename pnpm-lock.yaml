@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  expo-notifications@58.0.11: b164e38f4858425f546a86e40f858a2b1890a4d22a980046b55266694ce189c4
+
 importers:
 
   .:
@@ -219,7 +222,7 @@ importers:
         version: 58.0.16(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@5.7.3)
       expo-notifications:
         specifier: ~58.0.11
-        version: 58.0.11(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@5.7.3)
+        version: 58.0.11(patch_hash=b164e38f4858425f546a86e40f858a2b1890a4d22a980046b55266694ce189c4)(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@5.7.3)
       expo-router:
         specifier: ~58.0.30
         version: 58.0.30(d0c4fe3f17c90c334292b2c7d15c838d)
@@ -5841,7 +5844,7 @@ snapshots:
       '@expo/modules-macros-win32-arm64': 0.29.0
       '@expo/modules-macros-win32-x64': 0.29.0
 
-  expo-notifications@58.0.11(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@5.7.3):
+  expo-notifications@58.0.11(patch_hash=b164e38f4858425f546a86e40f858a2b1890a4d22a980046b55266694ce189c4)(expo@58.0.23)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@5.7.3):
     dependencies:
       '@expo/image-utils': 0.12.6(supports-color@8.1.1)(typescript@5.7.3)
       abort-controller: 3.0.0

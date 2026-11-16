@@ -6,34 +6,38 @@ let isConfigured = false;
 export async function setupNativeNotifications() {
   if (isConfigured) return;
 
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-      priority: Notifications.AndroidNotificationPriority.MAX
-    })
-  });
-
-  if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('ag-remote-approvals', {
-      name: 'Agent Approvals',
-      importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 150, 250],
-      sound: 'default',
-      lightColor: '#6366f1',
-      enableLights: true
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+        priority: Notifications.AndroidNotificationPriority?.MAX
+      })
     });
 
-    await Notifications.setNotificationChannelAsync('ag-remote-updates', {
-      name: 'Task Updates',
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 200],
-      sound: 'default'
-    });
+    if (Platform.OS === 'android' && Notifications.setNotificationChannelAsync) {
+      await Notifications.setNotificationChannelAsync('ag-remote-approvals', {
+        name: 'Agent Approvals',
+        importance: Notifications.AndroidImportance?.MAX ?? 5,
+        vibrationPattern: [0, 250, 150, 250],
+        sound: 'default',
+        lightColor: '#6366f1',
+        enableLights: true
+      });
+
+      await Notifications.setNotificationChannelAsync('ag-remote-updates', {
+        name: 'Task Updates',
+        importance: Notifications.AndroidImportance?.HIGH ?? 4,
+        vibrationPattern: [0, 200],
+        sound: 'default'
+      });
+    }
+  } catch (err) {
+    console.warn('Native notification setup skipped:', err?.message || err);
+  } finally {
+    isConfigured = true;
   }
-
-  isConfigured = true;
 }
 
 export async function showNativeNotification({ title, body, data = {}, isUrgent = false }) {

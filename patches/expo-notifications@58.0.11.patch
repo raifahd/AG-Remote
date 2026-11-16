@@ -1,0 +1,20 @@
+diff --git a/build/TopicSubscriptionModule.android.js b/build/TopicSubscriptionModule.android.js
+index 4ad9affeea4282013924ca0f8c5f81809b57bc02..3d69a8836f814f31bac0f7a82081a6324cc2a5ef 100644
+--- a/build/TopicSubscriptionModule.android.js
++++ b/build/TopicSubscriptionModule.android.js	
+@@ -1,4 +1,12 @@
+-import { requireNativeModule } from 'expo';
+-export default requireNativeModule('ExpoTopicSubscriptionModule');
++import { requireOptionalNativeModule } from 'expo';
+ 
+-//# sourceMappingURL=TopicSubscriptionModule.android.js.map
++const module = typeof requireOptionalNativeModule === 'function'
++  ? requireOptionalNativeModule('ExpoTopicSubscriptionModule')
++  : null;
++
++export default module || {
++  addListener: () => {},
++  removeListeners: () => {},
++  subscribeToTopicAsync: () => Promise.resolve(null),
++  unsubscribeFromTopicAsync: () => Promise.resolve(null)
++};
