@@ -1,7 +1,14 @@
 // End-to-end encryption between the laptop (host) and phones over relay or WebSocket.
 // WebCrypto implementation for Node.js, browsers, and React Native (Hermes).
 
-const subtle = globalThis.crypto.subtle;
+function getSubtle(): SubtleCrypto {
+  const c = typeof globalThis !== 'undefined' ? (globalThis.crypto as any) : undefined;
+  if (!c || !c.subtle) {
+    throw new E2EError('crypto-unavailable');
+  }
+  return c.subtle;
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -58,7 +65,15 @@ export function fromB64u(str: string): Uint8Array {
 }
 
 export function randomBytes(n: number): Uint8Array {
-  return globalThis.crypto.getRandomValues(new Uint8Array(n));
+  const c = typeof globalThis !== 'undefined' ? (globalThis.crypto as any) : undefined;
+  if (c && typeof c.getRandomValues === 'function') {
+    return c.getRandomValues(new Uint8Array(n));
+  }
+  const arr = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    arr[i] = Math.floor(Math.random() * 256);
+  }
+  return arr;
 }
 
 export function newRoomId(): string {
@@ -78,18 +93,18 @@ function concat(...parts: Uint8Array[]): Uint8Array {
 
 async function importPub(b64: string): Promise<CryptoKey> {
   try {
-    return await subtle.importKey('raw', fromB64u(b64), CURVE, true, []);
+    return await getSubtle().importKey('raw', fromB64u(b64), CURVE, true, []);
   } catch {
     throw new E2EError('bad-key');
   }
 }
 
 async function ecdh(privateKey: CryptoKey, publicKey: CryptoKey): Promise<Uint8Array> {
-  return new Uint8Array(await subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256));
+  return new Uint8Array(await getSubtle().deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256));
 }
 
 function importHmac(secretBytes: Uint8Array): Promise<CryptoKey> {
-  return subtle.importKey('raw', secretBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  return getSubtle().importKey('raw', secretBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
 function pairTranscript(room: string, phonePub: string, name: string): Uint8Array {
@@ -101,7 +116,7 @@ function pairedTranscript(room: string, hostPub: string, phonePub: string): Uint
 }
 
 export async function checkCode(phonePub: string): Promise<string> {
-  const hash = await subtle.digest('SHA-256', encoder.encode([VERSION, 'check', phonePub].join('|')));
+  const hash = await getSubtle().digest('SHA-256', encoder.encode([VERSION, 'check', phonePub].join('|')));
   return String(new DataView(hash).getUint32(0) % 10000).padStart(4, '0');
 }
 
@@ -121,18 +136,18 @@ export interface KeyIdentity {
 }
 
 export async function generateIdentity(opts: { extractable?: boolean } = {}): Promise<KeyIdentity> {
-  const kp = await subtle.generateKey(CURVE, opts.extractable ?? false, ['deriveBits']);
+  const kp = await getSubtle().generateKey(CURVE, opts.extractable ?? false, ['deriveBits']);
   return {
     privateKey: kp.privateKey,
     publicKey: kp.publicKey,
-    pub: toB64u(await subtle.exportKey('raw', kp.publicKey))
+    pub: toB64u(await getSubtle().exportKey('raw', kp.publicKey))
   };
 }
 
 export async function exportIdentity(identity: KeyIdentity): Promise<{ pub: string; jwk: JsonWebKey }> {
   return {
     pub: identity.pub,
-    jwk: await subtle.exportKey('jwk', identity.privateKey)
+    jwk: await getSubtle().exportKey('jwk', identity.privateKey)
   };
 }
 
@@ -140,7 +155,7 @@ export async function importIdentity(
   saved: { pub: string; jwk: JsonWebKey },
   opts: { extractable?: boolean } = {}
 ): Promise<KeyIdentity> {
-  const privateKey = await subtle.importKey('jwk', saved.jwk, CURVE, opts.extractable ?? false, ['deriveBits']);
+  const privateKey = await getSubtle().importKey('jwk', saved.jwk, CURVE, opts.extractable ?? false, ['deriveBits']);
   return {
     privateKey,
     publicKey: await importPub(saved.pub),
@@ -171,7 +186,7 @@ export class Channel {
 
   async seal(obj: unknown): Promise<{ n: number; c: string }> {
     const n = this.sendN++;
-    const c = await subtle.encrypt(
+    const c = await getSubtle().encrypt(
       { name: 'AES-GCM', iv: Channel.nonce(n), additionalData: this.sendAad },
       this.sendKey,
       encoder.encode(JSON.stringify(obj))
@@ -185,7 +200,7 @@ export class Channel {
     }
     let plain: ArrayBuffer;
     try {
-      plain = await subtle.decrypt(
+      plain = await getSubtle().decrypt(
         { name: 'AES-GCM', iv: Channel.nonce(msg.n), additionalData: this.recvAad },
         this.recvKey,
         fromB64u(msg.c)
@@ -218,12 +233,12 @@ async function deriveChannel(p: DeriveChannelParams): Promise<Channel> {
   const se = p.role === 'phone' ? await ecdh(p.staticPriv, p.peerEph) : await ecdh(p.ephPriv, p.peerStatic);
 
   const salt = new Uint8Array(
-    await subtle.digest('SHA-256', encoder.encode([VERSION, p.room, p.phonePub, p.hostPub, p.phoneEph, p.hostEph].join('|')))
+    await getSubtle().digest('SHA-256', encoder.encode([VERSION, p.room, p.phonePub, p.hostPub, p.phoneEph, p.hostEph].join('|')))
   );
 
-  const base = await subtle.importKey('raw', concat(ss, ee, es, se), 'HKDF', false, ['deriveKey']);
+  const base = await getSubtle().importKey('raw', concat(ss, ee, es, se), 'HKDF', false, ['deriveKey']);
   const key = (info: string) =>
-    subtle.deriveKey(
+    getSubtle().deriveKey(
       { name: 'HKDF', hash: 'SHA-256', salt, info: encoder.encode(`${VERSION}|${info}`) },
       base,
       { name: 'AES-GCM', length: 256 },
@@ -413,7 +428,7 @@ export class HostE2E {
     }
 
     const hmacKey = await importHmac(this.pairingSecret);
-    const valid = await subtle.verify(
+    const valid = await getSubtle().verify(
       'HMAC',
       hmacKey,
       fromB64u(mac),
@@ -457,7 +472,7 @@ export class HostE2E {
 
     await this.opts.savePaired(phonePub, req.name);
 
-    const pairedHmac = await subtle.sign(
+    const pairedHmac = await getSubtle().sign(
       'HMAC',
       hmacKey,
       pairedTranscript(this.opts.room, this.opts.identity.pub, phonePub)
@@ -581,7 +596,7 @@ export class PhoneE2E {
     this.pairingSecretBytes = fromB64u(secretB64u);
     this.opts.onStatus?.('pairing');
     const hmacKey = await importHmac(this.pairingSecretBytes);
-    const mac = await subtle.sign(
+    const mac = await getSubtle().sign(
       'HMAC',
       hmacKey,
       pairTranscript(this.opts.room, this.opts.identity.pub, this.opts.name)
@@ -647,7 +662,7 @@ export class PhoneE2E {
     if (typeof hostPub !== 'string' || typeof mac !== 'string' || !this.pairingSecretBytes) return;
 
     const hmacKey = await importHmac(this.pairingSecretBytes);
-    const valid = await subtle.verify(
+    const valid = await getSubtle().verify(
       'HMAC',
       hmacKey,
       fromB64u(mac),

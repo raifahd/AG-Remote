@@ -101,3 +101,4 @@ describe('FsBrowser', () => {
     expect(eventEmitted).toBe(true);
   });
 });
+

@@ -86,3 +86,4 @@ describe('TerminalRunner', () => {
     expect(killed).toBe(false);
   });
 });
+

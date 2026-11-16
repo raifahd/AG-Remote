@@ -65,3 +65,4 @@ export async function showNativeNotification({ title, body, data = {}, isUrgent 
     console.warn('Failed to schedule local notification:', err);
   }
 }
+
