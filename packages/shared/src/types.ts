@@ -25,7 +25,13 @@ import {
   FocusSessionRequestSchema,
   ModelInfoSchema,
   ModelsResponseSchema,
-  SelectModelRequestSchema
+  SelectModelRequestSchema,
+  RegisteredWindowSchema,
+  WindowsResponseSchema,
+  SelectWindowRequestSchema,
+  HubRegisterRequestSchema,
+  HubHeartbeatRequestSchema,
+  WindowsChangedEventSchema
 } from './schemas.js';
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -46,6 +52,13 @@ export type FocusSessionRequest = z.infer<typeof FocusSessionRequestSchema>;
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 export type ModelsResponse = z.infer<typeof ModelsResponseSchema>;
 export type SelectModelRequest = z.infer<typeof SelectModelRequestSchema>;
+
+export type RegisteredWindow = z.infer<typeof RegisteredWindowSchema>;
+export type WindowsResponse = z.infer<typeof WindowsResponseSchema>;
+export type SelectWindowRequest = z.infer<typeof SelectWindowRequestSchema>;
+export type HubRegisterRequest = z.infer<typeof HubRegisterRequestSchema>;
+export type HubHeartbeatRequest = z.infer<typeof HubHeartbeatRequestSchema>;
+export type WindowsChangedEvent = z.infer<typeof WindowsChangedEventSchema>;
 
 export type StatusChangedEvent = z.infer<typeof StatusChangedEventSchema>;
 export type ApprovalRequestedEvent = z.infer<typeof ApprovalRequestedEventSchema>;

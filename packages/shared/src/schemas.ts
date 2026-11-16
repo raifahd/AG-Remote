@@ -101,19 +101,55 @@ export const ChatMessageSchema = z.object({
 
 export const PromptRequestSchema = z.object({
   text: z.string().min(1),
-  modelId: z.string().optional()
+  modelId: z.string().optional(),
+  windowId: z.string().optional(),
+  sessionId: z.string().optional()
 }).strict();
 
 export const ApproveRequestSchema = z.object({
   requestId: z.string().min(1),
   scope: z.enum(['once', 'conversation', 'always']).optional(),
   option: ApprovalOptionSchema.optional(),
-  response: z.string().optional()
+  response: z.string().optional(),
+  windowId: z.string().optional()
 }).strict();
 
 export const RejectRequestSchema = z.object({
   requestId: z.string().min(1),
-  reason: z.string().optional()
+  reason: z.string().optional(),
+  windowId: z.string().optional()
+}).strict();
+
+export const RegisteredWindowSchema = z.object({
+  windowId: z.string().min(1),
+  workspacePath: z.string(),
+  workspaceName: z.string(),
+  pid: z.number().int().optional(),
+  focusedAt: z.number().int().nonnegative().optional(),
+  activeConversationId: z.string().optional()
+}).strict();
+
+export const WindowsResponseSchema = z.object({
+  windows: z.array(RegisteredWindowSchema),
+  selectedId: z.string().nullable(),
+  hostName: z.string()
+}).strict();
+
+export const SelectWindowRequestSchema = z.object({
+  windowId: z.string().min(1)
+}).strict();
+
+export const HubRegisterRequestSchema = z.object({
+  windowId: z.string().min(1),
+  workspacePath: z.string(),
+  workspaceName: z.string(),
+  pid: z.number().int().optional(),
+  activeConversationId: z.string().optional()
+}).strict();
+
+export const HubHeartbeatRequestSchema = z.object({
+  windowId: z.string().min(1),
+  activeConversationId: z.string().optional()
 }).strict();
 
 export const HealthResponseSchema = z.object({
@@ -151,6 +187,7 @@ export const StatusChangedEventSchema = z.object({
   status: RunStatusSchema,
   action: z.string().optional(),
   thinking: z.string().optional(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -161,6 +198,7 @@ export const ApprovalRequestedEventSchema = z.object({
   sessionTitle: z.string().optional(),
   kind: ApprovalKindSchema,
   summary: z.string(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -168,6 +206,7 @@ export const RunFinishedEventSchema = z.object({
   type: z.literal('run_finished'),
   sessionId: z.string(),
   sessionTitle: z.string().optional(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -177,6 +216,7 @@ export const MessageAppendedEventSchema = z.object({
   sessionTitle: z.string().optional(),
   role: z.enum(['user', 'agent']),
   text: z.string(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -184,6 +224,7 @@ export const SessionCreatedEventSchema = z.object({
   type: z.literal('session_created'),
   sessionId: z.string(),
   title: z.string(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -192,12 +233,21 @@ export const ActiveSessionChangedEventSchema = z.object({
   sessionId: z.string(),
   previousSessionId: z.string().optional(),
   title: z.string().optional(),
+  windowId: z.string().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
 export const BridgeErrorEventSchema = z.object({
   type: z.literal('bridge_error'),
   message: z.string(),
+  windowId: z.string().optional(),
+  at: z.number().int().nonnegative()
+}).strict();
+
+export const WindowsChangedEventSchema = z.object({
+  type: z.literal('windows_changed'),
+  windows: z.array(RegisteredWindowSchema),
+  selectedId: z.string().nullable().optional(),
   at: z.number().int().nonnegative()
 }).strict();
 
@@ -208,7 +258,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   MessageAppendedEventSchema,
   SessionCreatedEventSchema,
   ActiveSessionChangedEventSchema,
-  BridgeErrorEventSchema
+  BridgeErrorEventSchema,
+  WindowsChangedEventSchema
 ]);
 
 export const CreateSessionRequestSchema = z.object({

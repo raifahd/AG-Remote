@@ -13,6 +13,9 @@ import {
   UploadPayloadSchema,
   CreateSessionRequestSchema,
   SelectModelRequestSchema,
+  SelectWindowRequestSchema,
+  HubRegisterRequestSchema,
+  HubHeartbeatRequestSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -20,6 +23,8 @@ import { RateLimiter, TokenManager, PairingManager, constantTimeCompare } from '
 import { AgentAdapter } from './adapters/AgentAdapter.js';
 import { NtfyNotifier } from './notifier.js';
 import { getMobileVersionState } from './versioning.js';
+import { WindowRegistry } from './core/window-registry.js';
+import { MultiWindowManager } from './core/multiWindowManager.js';
 
 export interface ServerConfig {
   port: number;
@@ -27,6 +32,9 @@ export interface ServerConfig {
   version: string;
   adapterMode: 'sdk' | 'cdp' | 'fake';
   uploadDir?: string;
+  workspacePath?: string;
+  workspaceName?: string;
+  createAdapter?: ((workspacePath: string, pid?: number | undefined) => AgentAdapter) | undefined;
 }
 
 export class BridgeServer {
@@ -36,6 +44,8 @@ export class BridgeServer {
   private readonly tokenManager: TokenManager;
   private readonly rateLimiter: RateLimiter;
   private readonly pairingManager: PairingManager;
+  private readonly windowRegistry: WindowRegistry;
+  private readonly multiWindowManager: MultiWindowManager;
   private readonly notifier?: NtfyNotifier | undefined;
   private readonly app: express.Express;
   private httpServer: http.Server | null = null;
@@ -49,7 +59,8 @@ export class BridgeServer {
     tokenManager: TokenManager,
     rateLimiter = new RateLimiter(),
     notifier?: NtfyNotifier | undefined,
-    pairingManager = new PairingManager()
+    pairingManager = new PairingManager(),
+    multiWindowManager?: MultiWindowManager | undefined
   ) {
     this.config = config;
     this.uploadDir = config.uploadDir || path.join(process.cwd(), '.ag-remote', 'uploads');
@@ -59,8 +70,41 @@ export class BridgeServer {
     this.rateLimiter = rateLimiter;
     this.notifier = notifier;
     this.pairingManager = pairingManager;
+    const defaultHostId = config.workspacePath
+      ? Buffer.from(config.workspacePath).toString('hex').slice(0, 12)
+      : 'primary-window';
+    this.multiWindowManager = multiWindowManager ?? new MultiWindowManager({
+      hostWindowId: defaultHostId,
+      hostAdapter: adapter,
+      createAdapter: config.createAdapter
+    });
+    this.windowRegistry = this.multiWindowManager.getRegistry();
+
+    this.windowRegistry.register({
+      windowId: this.multiWindowManager.getHostWindowId(),
+      workspacePath: config.workspacePath ?? process.cwd(),
+      workspaceName: config.workspaceName ?? path.basename(config.workspacePath ?? process.cwd()),
+      pid: process.pid
+    });
+
     this.app = express();
     this.configureApp();
+  }
+
+  getAdapter(windowId?: string): AgentAdapter {
+    return this.multiWindowManager.getAdapter(windowId);
+  }
+
+  getDefaultAdapter(): AgentAdapter {
+    return this.adapter;
+  }
+
+  getWindowRegistry(): WindowRegistry {
+    return this.windowRegistry;
+  }
+
+  getMultiWindowManager(): MultiWindowManager {
+    return this.multiWindowManager;
   }
 
   private configureApp(): void {
@@ -144,18 +188,88 @@ export class BridgeServer {
       res.json(this.buildHealthResponse());
     });
 
-    v1Router.get('/state', async (_req: Request, res: Response, next: NextFunction) => {
+    v1Router.get('/windows', (_req: Request, res: Response) => {
+      res.json({
+        windows: this.windowRegistry.getAll(),
+        selectedId: this.windowRegistry.getSelectedId(),
+        hostName: os.hostname()
+      });
+    });
+
+    v1Router.post('/windows/select', async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const state = await this.adapter.getState();
-        res.json(state);
+        const parsed = SelectWindowRequestSchema.safeParse(req.body);
+        if (!parsed.success) {
+          res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+          return;
+        }
+        const win = this.windowRegistry.select(parsed.data.windowId);
+        if (!win) {
+          res.status(404).json(this.makeError('NOT_FOUND', 'Window not found'));
+          return;
+        }
+        const adapter = this.getAdapter(parsed.data.windowId);
+        const snapshot = await adapter.getState();
+        res.json({ ok: true, status: 'selected', window: win, snapshot, hostName: os.hostname() });
       } catch (err) {
         next(err);
       }
     });
 
-    v1Router.get('/sessions', async (_req: Request, res: Response, next: NextFunction) => {
+    v1Router.post('/hub/register', (req: Request, res: Response) => {
+      const parsed = HubRegisterRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      this.windowRegistry.register({
+        windowId: parsed.data.windowId,
+        workspacePath: parsed.data.workspacePath,
+        workspaceName: parsed.data.workspaceName,
+        pid: parsed.data.pid,
+        activeConversationId: parsed.data.activeConversationId
+      });
+      res.json({ ok: true, registered: true });
+    });
+
+    v1Router.post('/hub/heartbeat', (req: Request, res: Response) => {
+      const parsed = HubHeartbeatRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      const ok = this.windowRegistry.heartbeat(parsed.data.windowId, parsed.data.activeConversationId);
+      res.json({ ok });
+    });
+
+    v1Router.get('/hub/diagnostics', (_req: Request, res: Response) => {
+      res.json({
+        version: this.config.version,
+        windows: this.windowRegistry.getAll(),
+        selectedId: this.windowRegistry.getSelectedId()
+      });
+    });
+
+    v1Router.get('/state', async (req: Request, res: Response, next: NextFunction) => {
       try {
-        const sessions = await this.adapter.listSessions();
+        const windowId = typeof req.query.windowId === 'string' ? req.query.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const state = await adapter.getState();
+        res.json({
+          ...state,
+          hostName: os.hostname(),
+          windowId: windowId ?? this.windowRegistry.getSelectedId()
+        });
+      } catch (err) {
+        next(err);
+      }
+    });
+
+    v1Router.get('/sessions', async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const windowId = typeof req.query.windowId === 'string' ? req.query.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const sessions = await adapter.listSessions();
         res.json(sessions);
       } catch (err) {
         next(err);
@@ -169,7 +283,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        const sessionId = await this.adapter.createSession(parsed.data.text, parsed.data.modelId);
+        const windowId = typeof req.body?.windowId === 'string' ? req.body.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const sessionId = await adapter.createSession(parsed.data.text, parsed.data.modelId);
         res.json({ ok: true, sessionId });
       } catch (err) {
         next(err);
@@ -183,7 +299,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', 'Missing session ID'));
           return;
         }
-        await this.adapter.focusSession(sessionId);
+        const windowId = typeof req.body?.windowId === 'string' ? req.body.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        await adapter.focusSession(sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -198,7 +316,8 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        await this.adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
+        const adapter = this.getAdapter(parsed.data.windowId);
+        await adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -210,7 +329,9 @@ export class BridgeServer {
         const sessionId = req.params.id;
         const limitParam = req.query.limit;
         const limit = typeof limitParam === 'string' ? Math.max(1, Math.min(200, parseInt(limitParam, 10) || 50)) : 50;
-        const messages = await this.adapter.getMessages(limit, sessionId);
+        const windowId = typeof req.query.windowId === 'string' ? req.query.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const messages = await adapter.getMessages(limit, sessionId);
         res.json(messages);
       } catch (err) {
         next(err);
@@ -222,7 +343,9 @@ export class BridgeServer {
         const limitParam = req.query.limit;
         const limit = typeof limitParam === 'string' ? Math.max(1, Math.min(200, parseInt(limitParam, 10) || 50)) : 50;
         const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-        const messages = await this.adapter.getMessages(limit, sessionId);
+        const windowId = typeof req.query.windowId === 'string' ? req.query.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const messages = await adapter.getMessages(limit, sessionId);
         res.json(messages);
       } catch (err) {
         next(err);
@@ -236,8 +359,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-        await this.adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
+        const sessionId = parsed.data.sessionId ?? (typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined);
+        const adapter = this.getAdapter(parsed.data.windowId);
+        await adapter.sendPrompt(parsed.data.text, sessionId, parsed.data.modelId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -247,7 +371,9 @@ export class BridgeServer {
     v1Router.get('/models', async (req: Request, res: Response, next: NextFunction) => {
       try {
         const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-        const models = await this.adapter.getModels(sessionId);
+        const windowId = typeof req.query.windowId === 'string' ? req.query.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        const models = await adapter.getModels(sessionId);
         res.json(models);
       } catch (err) {
         next(err);
@@ -261,7 +387,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
-        await this.adapter.setModel(parsed.data.modelId, parsed.data.sessionId);
+        const windowId = typeof req.body?.windowId === 'string' ? req.body.windowId : undefined;
+        const adapter = this.getAdapter(windowId);
+        await adapter.setModel(parsed.data.modelId, parsed.data.sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -334,8 +462,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
+        const adapter = this.getAdapter(parsed.data.windowId);
         try {
-          await this.adapter.approve(parsed.data.requestId, parsed.data.scope);
+          await adapter.approve(parsed.data.requestId, parsed.data.scope, parsed.data.response);
           res.json({ ok: true });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -361,8 +490,9 @@ export class BridgeServer {
           res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
           return;
         }
+        const adapter = this.getAdapter(parsed.data.windowId);
         try {
-          await this.adapter.reject(parsed.data.requestId);
+          await adapter.reject(parsed.data.requestId, parsed.data.reason);
           res.json({ ok: true });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -384,7 +514,9 @@ export class BridgeServer {
     v1Router.post('/stop', async (req: Request, res: Response, next: NextFunction) => {
       try {
         const sessionId = typeof req.query.sessionId === 'string' ? req.query.sessionId : undefined;
-        await this.adapter.stop(sessionId);
+        const windowId = typeof req.body?.windowId === 'string' ? req.body.windowId : (typeof req.query.windowId === 'string' ? req.query.windowId : undefined);
+        const adapter = this.getAdapter(windowId);
+        await adapter.stop(sessionId);
         res.json({ ok: true });
       } catch (err) {
         next(err);
@@ -421,6 +553,7 @@ export class BridgeServer {
     });
 
     this.app.use('/v1', v1Router);
+    this.app.use('/api', v1Router);
 
     this.app.use((_req: Request, res: Response) => {
       res.status(404).json(this.makeError('NOT_FOUND', 'Endpoint not found'));
@@ -433,6 +566,11 @@ export class BridgeServer {
 
   private authMiddleware(req: Request, res: Response, next: NextFunction): void {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+    if (isLoopback && (req.path.startsWith('/hub/') || req.path === '/hub')) {
+      return next();
+    }
+
     if (this.rateLimiter.isBlocked(ip)) {
       res.status(429).json(this.makeError('RATE_LIMITED', 'Too many failed authentication attempts. Please wait.'));
       return;
@@ -514,7 +652,18 @@ export class BridgeServer {
         });
       });
 
-      this.eventSubscription = this.adapter.onEvent((event) => {
+      this.windowRegistry.startPruneTimer();
+
+      this.windowRegistry.on('change', (windows) => {
+        this.broadcastEvent({
+          type: 'windows_changed',
+          windows,
+          selectedId: this.windowRegistry.getSelectedId(),
+          at: Date.now()
+        });
+      });
+
+      this.multiWindowManager.on('event', (event: AgentEvent) => {
         this.broadcastEvent(event);
         if (event.type === 'run_finished') {
           void this.notifier?.notifyRunFinished(event.sessionId, event.sessionTitle);
@@ -534,6 +683,9 @@ export class BridgeServer {
   }
 
   async stop(): Promise<void> {
+    this.windowRegistry.stopPruneTimer();
+    this.multiWindowManager.dispose();
+
     if (this.eventSubscription) {
       this.eventSubscription.dispose();
       this.eventSubscription = null;

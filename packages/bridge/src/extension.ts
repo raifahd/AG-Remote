@@ -26,8 +26,15 @@ class VsCodeSecretStore implements SecretStore {
   }
 }
 
+interface WorkerSession {
+  windowId: string;
+  port: number;
+  timer: NodeJS.Timeout;
+}
+
 let serverInstance: BridgeServer | null = null;
 let adapterInstance: SdkAdapter | null = null;
+let workerInstance: WorkerSession | null = null;
 let statusBarItem: vscode.StatusBarItem | null = null;
 let tokenManagerInstance: TokenManager | null = null;
 let notifierInstance: NtfyNotifier | null = null;
@@ -103,17 +110,19 @@ export async function deactivate(): Promise<void> {
 }
 
 async function startBridge(): Promise<void> {
-  if (serverInstance) {
-    vscode.window.showInformationMessage('AG Remote: Bridge is already running.');
+  if (serverInstance || workerInstance) {
+    vscode.window.showInformationMessage('AG Remote: Bridge is already active in this window.');
     return;
   }
 
+  const port = 48123;
   const tailscaleIp = findTailscaleIpv4();
+  const host = tailscaleIp ?? '127.0.0.1';
+
   if (!tailscaleIp) {
-    vscode.window.showErrorMessage(
-      'AG Remote: Tailscale IPv4 address (100.64.0.0/10) not found. Connect to Tailscale before starting the bridge.'
+    vscode.window.showWarningMessage(
+      'AG Remote: Tailscale IPv4 address not found. Binding to local loopback (127.0.0.1).'
     );
-    return;
   }
 
   if (!tokenManagerInstance) {
@@ -121,22 +130,39 @@ async function startBridge(): Promise<void> {
     return;
   }
 
-  if (notifierInstance) {
+  if (notifierInstance && tailscaleIp) {
     notifierInstance.setTailscaleIp(tailscaleIp);
   }
 
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+  const workspaceName = vscode.workspace.name ?? (workspaceFolder ? workspaceFolder.split('/').pop() || 'workspace' : 'workspace');
+
   const stateMachine = new AgentStateMachine({ debounceMs: 2000 });
   adapterInstance = new SdkAdapter(stateMachine, {
+    workspace: workspaceFolder,
+    ownerPid: process.pid,
     executeCommand: async (cmd: string, ...args: unknown[]) => Promise.resolve(vscode.commands.executeCommand(cmd, ...args))
   });
   adapterInstance.startPolling();
 
   serverInstance = new BridgeServer(
     {
-      port: 48123,
-      host: tailscaleIp,
+      port,
+      host,
       version: '0.1.0',
-      adapterMode: 'sdk'
+      adapterMode: 'sdk',
+      workspacePath: workspaceFolder,
+      workspaceName: workspaceName,
+      createAdapter: (wsPath, pid) => {
+        const sm = new AgentStateMachine({ debounceMs: 2000 });
+        const a = new SdkAdapter(sm, {
+          workspace: wsPath,
+          ownerPid: pid,
+          executeCommand: async (cmd: string, ...args: unknown[]) => Promise.resolve(vscode.commands.executeCommand(cmd, ...args))
+        });
+        a.startPolling();
+        return a;
+      }
     },
     adapterInstance,
     tokenManagerInstance,
@@ -146,20 +172,101 @@ async function startBridge(): Promise<void> {
 
   try {
     await serverInstance.start();
-    updateStatusBar('running', tailscaleIp, 48123);
-    vscode.window.showInformationMessage(`AG Remote: Bridge listening on http://${tailscaleIp}:48123`);
-    outputChannel?.appendLine(`Bridge started at http://${tailscaleIp}:48123`);
-  } catch (err) {
+    updateStatusBar('hub', host, port);
+    vscode.window.showInformationMessage(`AG Remote: Hub listening on http://${host}:${port}`);
+    outputChannel?.appendLine(`Bridge Hub started at http://${host}:${port}`);
+  } catch (err: unknown) {
     adapterInstance.stopPolling();
     adapterInstance = null;
     serverInstance = null;
+
+    const isAddrInUse = Boolean(err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'EADDRINUSE');
+    if (isAddrInUse) {
+      outputChannel?.appendLine(`Port ${port} in use. Attempting to join as Worker window...`);
+      await startWorker(port, workspaceFolder, workspaceName);
+      return;
+    }
+
     updateStatusBar('stopped');
     const msg = err instanceof Error ? err.message : String(err);
     vscode.window.showErrorMessage(`AG Remote failed to start: ${msg}`);
   }
 }
 
+async function startWorker(port: number, workspaceFolder: string, workspaceName: string): Promise<void> {
+  const windowId = Buffer.from(workspaceFolder).toString('hex').slice(0, 12) || `worker-${process.pid}`;
+  const hubUrl = `http://127.0.0.1:${port}`;
+
+  const register = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${hubUrl}/api/hub/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          windowId,
+          workspacePath: workspaceFolder,
+          workspaceName,
+          pid: process.pid
+        })
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const heartbeat = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(`${hubUrl}/api/hub/heartbeat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ windowId })
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const registered = await register();
+  if (!registered) {
+    vscode.window.showWarningMessage(`AG Remote: Port ${port} is occupied, but could not register with Hub at ${hubUrl}.`);
+    updateStatusBar('stopped');
+    return;
+  }
+
+  const timer = setInterval(async () => {
+    const ok = await heartbeat();
+    if (!ok) {
+      const reReg = await register();
+      if (!reReg) {
+        updateStatusBar('worker-disconnected', '127.0.0.1', port);
+      } else {
+        updateStatusBar('worker', '127.0.0.1', port);
+      }
+    }
+  }, 4000);
+
+  workerInstance = {
+    windowId,
+    port,
+    timer
+  };
+
+  updateStatusBar('worker', '127.0.0.1', port);
+  vscode.window.showInformationMessage(`AG Remote: Joined Hub on port ${port} as Worker (${workspaceName})`);
+  outputChannel?.appendLine(`Joined AG Remote Hub on port ${port} as Worker (windowId: ${windowId}, workspace: ${workspaceName})`);
+}
+
 async function stopBridge(): Promise<void> {
+  if (workerInstance) {
+    clearInterval(workerInstance.timer);
+    workerInstance = null;
+    updateStatusBar('stopped');
+    vscode.window.showInformationMessage('AG Remote: Worker disconnected.');
+    outputChannel?.appendLine('Worker disconnected.');
+    return;
+  }
   if (adapterInstance) {
     adapterInstance.stopPolling();
     adapterInstance = null;
@@ -173,13 +280,25 @@ async function stopBridge(): Promise<void> {
   }
 }
 
-function updateStatusBar(status: 'running' | 'stopped', host?: string, port?: number): void {
+function updateStatusBar(
+  status: 'hub' | 'worker' | 'worker-disconnected' | 'stopped',
+  host?: string,
+  port?: number
+): void {
   if (!statusBarItem) {
     return;
   }
-  if (status === 'running') {
-    statusBarItem.text = `$(broadcast) AG Remote: ${host}:${port}`;
-    statusBarItem.tooltip = `AG Remote Bridge is running at http://${host}:${port}. Click to show pairing details.`;
+  if (status === 'hub') {
+    statusBarItem.text = `$(broadcast) AG Remote: Hub (:${port})`;
+    statusBarItem.tooltip = `AG Remote Hub is running at http://${host}:${port}. Click to show pairing details.`;
+    statusBarItem.show();
+  } else if (status === 'worker') {
+    statusBarItem.text = `$(link) AG Remote: Worker (:${port})`;
+    statusBarItem.tooltip = `Connected to AG Remote Hub on port ${port} as Worker window.`;
+    statusBarItem.show();
+  } else if (status === 'worker-disconnected') {
+    statusBarItem.text = `$(sync~spin) AG Remote: Reconnecting...`;
+    statusBarItem.tooltip = `Reconnecting to AG Remote Hub on port ${port}...`;
     statusBarItem.show();
   } else {
     statusBarItem.text = `$(circle-slash) AG Remote: Stopped`;
@@ -189,6 +308,35 @@ function updateStatusBar(status: 'running' | 'stopped', host?: string, port?: nu
 }
 
 async function showPairingView(): Promise<void> {
+  if (workerInstance) {
+    const panel = vscode.window.createWebviewPanel(
+      'agRemoteWorker',
+      'AG Remote - Worker Window',
+      vscode.ViewColumn.Beside,
+      { enableScripts: true }
+    );
+    panel.webview.html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AG Remote Worker</title>
+  <style>
+    body { font-family: system-ui, sans-serif; padding: 20px; line-height: 1.5; color: var(--vscode-foreground); }
+    .box { background: var(--vscode-editor-background); padding: 16px; border-radius: 8px; border: 1px solid var(--vscode-widget-border); margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <h2>AG Remote Worker Window</h2>
+  <div class="box">
+    <p>This window is registered with the primary <strong>AG Remote Hub</strong> on port <code>${workerInstance.port}</code>.</p>
+    <p>Window ID: <code>${workerInstance.windowId}</code></p>
+    <p>The Hub window manages network pairing, phone QR codes, and credentials. Switch between windows directly on your mobile device!</p>
+  </div>
+</body>
+</html>`;
+    return;
+  }
+
   if (!tokenManagerInstance) {
     return;
   }
@@ -227,8 +375,7 @@ async function showPairingView(): Promise<void> {
     <p><strong>ntfy URL:</strong> <a href="https://ntfy.sh/${ntfyTopic}">https://ntfy.sh/${ntfyTopic}</a></p>
     <p><strong>Pairing JSON:</strong> <code>${pairingPayload}</code></p>
   </div>
-  <p>Status: ${serverInstance ? 'Bridge is RUNNING' : 'Bridge is STOPPED (Start via Command Palette: "AG Remote: Start Bridge")'}</p>
+  <p>Status: ${serverInstance ? 'Bridge is RUNNING as HUB' : 'Bridge is STOPPED'}</p>
 </body>
 </html>`;
 }
-

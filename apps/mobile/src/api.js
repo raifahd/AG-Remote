@@ -4,7 +4,8 @@ import {
   ChatMessageSchema,
   SessionSummarySchema,
   UploadResponseSchema,
-  AppVersionInfoSchema
+  AppVersionInfoSchema,
+  WindowsResponseSchema
 } from '@ag-remote/shared';
 import { z } from 'zod';
 
@@ -63,11 +64,25 @@ export async function probeAllProfiles(profiles) {
   return results;
 }
 
-export function fetchState(profile) {
+export async function fetchWindows(profile) {
+  const res = await authenticatedRequest(profile, '/v1/windows', 'GET');
+  const parsed = WindowsResponseSchema.safeParse(res);
+  if (!parsed.success) {
+    return { windows: [], selectedId: null, hostName: '' };
+  }
+  return parsed.data;
+}
+
+export async function selectWindow(profile, windowId) {
+  return authenticatedRequest(profile, '/v1/windows/select', 'POST', { windowId });
+}
+
+export function fetchState(profile, windowId) {
   if (!profile?.baseUrl) return Promise.reject(new Error('No profile'));
-  const key = `state:${profile.baseUrl}`;
+  const key = `state:${profile.baseUrl}:${windowId || ''}`;
   return dedupRequest(key, async () => {
-    const res = await authenticatedRequest(profile, '/v1/state', 'GET');
+    const path = windowId ? `/v1/state?windowId=${encodeURIComponent(windowId)}` : '/v1/state';
+    const res = await authenticatedRequest(profile, path, 'GET');
     const parsed = AgentStateSchema.safeParse(res);
     if (!parsed.success) {
       throw new Error('Invalid state response from bridge');
@@ -76,8 +91,9 @@ export function fetchState(profile) {
   });
 }
 
-export async function fetchSessions(profile) {
-  const res = await authenticatedRequest(profile, '/v1/sessions', 'GET');
+export async function fetchSessions(profile, windowId) {
+  const path = windowId ? `/v1/sessions?windowId=${encodeURIComponent(windowId)}` : '/v1/sessions';
+  const res = await authenticatedRequest(profile, path, 'GET');
   const schema = z.array(SessionSummarySchema);
   const parsed = schema.safeParse(res);
   if (!parsed.success) {
@@ -86,24 +102,30 @@ export async function fetchSessions(profile) {
   return parsed.data;
 }
 
-export async function createSession(profile, text, modelId) {
+export async function createSession(profile, text, modelId, windowId) {
   const body = {};
   if (text !== undefined) body.text = text;
   if (modelId) body.modelId = modelId;
+  if (windowId) body.windowId = windowId;
   return authenticatedRequest(profile, '/v1/sessions', 'POST', body);
 }
 
-export async function focusSession(profile, sessionId) {
-  return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/focus`, 'POST');
+export async function focusSession(profile, sessionId, windowId) {
+  const body = windowId ? { windowId } : undefined;
+  return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/focus`, 'POST', body);
 }
 
-export function fetchMessages(profile, limit = 50, sessionId) {
+export function fetchMessages(profile, limit = 50, sessionId, windowId) {
   if (!profile?.baseUrl) return Promise.reject(new Error('No profile'));
-  const key = `messages:${profile.baseUrl}:${sessionId || ''}:${limit}`;
+  const key = `messages:${profile.baseUrl}:${sessionId || ''}:${windowId || ''}:${limit}`;
   return dedupRequest(key, async () => {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    if (windowId) params.set('windowId', windowId);
+
     const path = sessionId
-      ? `/v1/sessions/${encodeURIComponent(sessionId)}/messages?limit=${limit}`
-      : `/v1/messages?limit=${limit}`;
+      ? `/v1/sessions/${encodeURIComponent(sessionId)}/messages?${params.toString()}`
+      : `/v1/messages?${params.toString()}`;
     const res = await authenticatedRequest(profile, path, 'GET');
     const schema = z.array(ChatMessageSchema);
     const parsed = schema.safeParse(res);
@@ -114,36 +136,51 @@ export function fetchMessages(profile, limit = 50, sessionId) {
   });
 }
 
-export async function sendPrompt(profile, text, sessionId, modelId) {
+export async function sendPrompt(profile, text, sessionId, modelId, windowId) {
   const body = { text };
   if (modelId) body.modelId = modelId;
+  if (windowId) body.windowId = windowId;
   if (sessionId) {
     return authenticatedRequest(profile, `/v1/sessions/${encodeURIComponent(sessionId)}/prompt`, 'POST', body);
   }
   return authenticatedRequest(profile, '/v1/prompt', 'POST', body);
 }
 
-export async function fetchModels(profile, sessionId) {
-  const path = sessionId ? `/v1/models?sessionId=${encodeURIComponent(sessionId)}` : '/v1/models';
+export async function fetchModels(profile, sessionId, windowId) {
+  const params = new URLSearchParams();
+  if (sessionId) params.set('sessionId', sessionId);
+  if (windowId) params.set('windowId', windowId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const path = `/v1/models${qs}`;
   return authenticatedRequest(profile, path, 'GET');
 }
 
-export async function selectModel(profile, modelId, sessionId) {
-  return authenticatedRequest(profile, '/v1/models/select', 'POST', { modelId, sessionId });
+export async function selectModel(profile, modelId, sessionId, windowId) {
+  return authenticatedRequest(profile, '/v1/models/select', 'POST', { modelId, sessionId, windowId });
 }
 
-export async function sendApprove(profile, requestId, scope) {
+export async function sendApprove(profile, requestId, scope, option, response, windowId) {
   const body = { requestId };
   if (scope) body.scope = scope;
+  if (option) body.option = option;
+  if (response !== undefined) body.response = response;
+  if (windowId) body.windowId = windowId;
   return authenticatedRequest(profile, '/v1/approve', 'POST', body);
 }
 
-export async function sendReject(profile, requestId) {
-  return authenticatedRequest(profile, '/v1/reject', 'POST', { requestId });
+export async function sendReject(profile, requestId, reason, windowId) {
+  const body = { requestId };
+  if (reason) body.reason = reason;
+  if (windowId) body.windowId = windowId;
+  return authenticatedRequest(profile, '/v1/reject', 'POST', body);
 }
 
-export async function sendStop(profile, sessionId) {
-  const path = sessionId ? `/v1/stop?sessionId=${encodeURIComponent(sessionId)}` : '/v1/stop';
+export async function sendStop(profile, sessionId, windowId) {
+  const params = new URLSearchParams();
+  if (sessionId) params.set('sessionId', sessionId);
+  if (windowId) params.set('windowId', windowId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  const path = `/v1/stop${qs}`;
   return authenticatedRequest(profile, path, 'POST');
 }
 

@@ -407,3 +407,21 @@ Record of decisions, discoveries, and rationale for AG Remote.
 
 
 
+
+
+## 2026-11-16: Phase 2 Multi-Window Hub Architecture
+- **Leader Election via Port Binding:**
+  - The first Antigravity window binding port 48123 (or configured port) acts as the Hub and runs the shared Bridge HTTP/WebSocket server.
+  - Subsequent windows encountering `EADDRINUSE` seamlessly demote themselves to Workers.
+- **Worker Registration & Heartbeat IPC:**
+  - Worker windows register with the Hub via loopback IPC at `POST /api/hub/register` sending their `windowId`, `workspacePath`, `workspaceName`, and `pid`.
+  - Workers transmit a heartbeat every 4 seconds via `POST /api/hub/heartbeat`. If the heartbeat fails (such as after a Hub restart), the worker automatically attempts re-registration.
+- **Stale Window Pruning:**
+  - The Hub prunes windows that miss two consecutive heartbeats (8 seconds). If the currently selected window is pruned, the Hub re-assigns the selected window to an active window or null.
+- **Dynamic Per-Window Channel Routing:**
+  - `MultiWindowManager` dynamically manages one `AgentAdapter` per registered window. When a worker window registers, the Hub instantiates an `SdkAdapter` targeting that specific window's workspace path and owner PID.
+  - All agent events emitted across windows are tagged with `windowId` and multiplexed to connected WebSocket clients.
+  - When a channel is unregistered or pruned, its background polling timers are stopped cleanly.
+- **Mobile Project Window Switcher:**
+  - Added `fetchWindows` and `selectWindow` to the mobile API client.
+  - Added a horizontal scrollable Window Tab Bar at the top of the mobile chat screen, visible whenever multiple windows are registered. Users can tap to instantly switch between active IDE windows and their conversation streams.

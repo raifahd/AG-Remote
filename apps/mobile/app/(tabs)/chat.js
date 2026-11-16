@@ -35,6 +35,8 @@ import {
   fetchMessages,
   fetchState,
   fetchSessions,
+  fetchWindows,
+  selectWindow,
   focusSession,
   createSession,
   sendPrompt,
@@ -1162,6 +1164,8 @@ export default function ChatScreen() {
   const [blinker, setBlinker] = useState(true);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [windows, setWindows] = useState([]);
+  const [selectedWindowId, setSelectedWindowId] = useState(null);
 
   const [sessions, setSessions] = useState([]);
   const sortedSessions = useMemo(() => {
@@ -1290,11 +1294,18 @@ export default function ChatScreen() {
       if (active) {
         let isOnline = false;
         try {
-          const [sessList, st] = await Promise.all([
+          const [sessList, st, winData] = await Promise.all([
             fetchSessions(active),
-            fetchState(active)
+            fetchState(active),
+            fetchWindows(active).catch(() => null)
           ]);
           isOnline = true;
+          if (winData && Array.isArray(winData.windows)) {
+            setWindows(winData.windows);
+            if (winData.selectedId) {
+              setSelectedWindowId(winData.selectedId);
+            }
+          }
           if (sessList && Array.isArray(sessList) && sessList.length > 0) {
             setSessions(sessList);
             saveCachedSessions(sessList, active.id);
@@ -1400,6 +1411,15 @@ export default function ChatScreen() {
     const ws = new BridgeWebSocketClient(
       profile,
       (event) => {
+        if (event && event.type === 'windows_changed') {
+          if (Array.isArray(event.windows)) {
+            setWindows(event.windows);
+          }
+          if (event.selectedId) {
+            setSelectedWindowId(event.selectedId);
+          }
+          return;
+        }
         if (event && event.type === 'active_session_changed' && event.sessionId) {
           setCurrentSessionId(event.sessionId);
           if (event.title) {
@@ -1759,6 +1779,43 @@ export default function ChatScreen() {
     }
   };
 
+  const handleSelectWindow = async (windowId) => {
+    setSelectedWindowId(windowId);
+    if (!profile) return;
+    try {
+      await selectWindow(profile, windowId);
+      const [sessList, st] = await Promise.all([
+        fetchSessions(profile, windowId),
+        fetchState(profile, windowId)
+      ]);
+      if (sessList && Array.isArray(sessList)) {
+        setSessions(sessList);
+        const resolvedSid = st?.activeSessionId || (sessList[0] ? sessList[0].id : null);
+        if (resolvedSid) {
+          setCurrentSessionId(resolvedSid);
+          const found = sessList.find((s) => s.id === resolvedSid);
+          if (found) setCurrentSessionTitle(found.title || 'Untitled');
+          const [list, modelData] = await Promise.all([
+            fetchMessages(profile, 50, resolvedSid, windowId).catch(() => null),
+            fetchModels(profile, resolvedSid, windowId).catch(() => null)
+          ]);
+          if (list && Array.isArray(list)) {
+            setMessages(list);
+          }
+          if (modelData && Array.isArray(modelData.models)) {
+            setAvailableModels(modelData.models);
+            if (modelData.currentModelId) {
+              const cur = modelData.models.find((m) => m.id === modelData.currentModelId);
+              if (cur) setSelectedModel(cur);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to switch window:', e);
+    }
+  };
+
   const currentSessionStatus = currentSessionId ? (sessionStatuses[currentSessionId] || agentStatus) : agentStatus;
   const isWorking = currentSessionStatus === 'generating';
   const isAwaitingApproval = currentSessionStatus === 'awaiting_approval';
@@ -1798,6 +1855,43 @@ export default function ChatScreen() {
   return (
     <View style={[styles.root, { backgroundColor: theme.bg }]}>
       <TopBar title={profile?.name || 'acme / dashboard'} status={statusLabel} />
+
+      {windows && windows.length > 1 && (
+        <View style={[styles.windowTabBar, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.windowTabScroll}>
+            {windows.map((win) => {
+              const isSelected = win.windowId === selectedWindowId;
+              return (
+                <TouchableOpacity
+                  key={win.windowId}
+                  style={[
+                    styles.windowTab,
+                    {
+                      backgroundColor: isSelected ? `${theme.primary}22` : theme.bg,
+                      borderColor: isSelected ? theme.primary : theme.border
+                    }
+                  ]}
+                  onPress={() => handleSelectWindow(win.windowId)}
+                >
+                  <Icon name="folder" size={12} color={isSelected ? theme.primary : theme.textSecondary} />
+                  <Text
+                    style={[
+                      styles.windowTabText,
+                      {
+                        color: isSelected ? theme.primary : theme.textSecondary,
+                        fontWeight: isSelected ? '700' : '500'
+                      }
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {win.workspaceName || 'Project'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       <View style={[styles.sessionBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
         <TouchableOpacity
@@ -2487,6 +2581,29 @@ const fontMono = Platform.select({
 const styles = StyleSheet.create({
   root: {
     flex: 1
+  },
+  windowTabBar: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 6,
+    paddingHorizontal: 12
+  },
+  windowTabScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  windowTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  windowTabText: {
+    fontSize: 11,
+    fontFamily: fontMedium
   },
   chatBody: {
     flex: 1,
