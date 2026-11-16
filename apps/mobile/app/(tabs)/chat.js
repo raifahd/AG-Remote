@@ -22,6 +22,7 @@ import { useTheme, CHAT_FONT_SIZES } from '../../src/theme.js';
 import TopBar from '../../src/components/TopBar.js';
 import Icon from '../../src/components/Icon.js';
 import StatusBadge from '../../src/components/StatusBadge.js';
+import ApprovalCard from '../../src/components/ApprovalCard.js';
 import {
   getActiveProfile,
   getProfiles,
@@ -1766,13 +1767,17 @@ export default function ChatScreen() {
     }
   };
 
-  const handleApprove = async (scope = 'once') => {
+  const handleApprove = async (args = 'once') => {
     if (!profile || !pendingApproval) return;
     const approval = pendingApproval;
+    const scope = typeof args === 'string' ? args : (args?.scope || 'once');
+    const response = typeof args === 'object' ? args?.response : undefined;
+    const option = typeof args === 'object' ? args?.option : undefined;
+
     setPendingApproval(null);
     setAgentStatus('generating');
     try {
-      await sendApprove(profile, approval.requestId, scope);
+      await sendApprove(profile, approval.requestId, scope, option, response, selectedWindowId || undefined);
       await loadMessages(currentSessionId || undefined);
     } catch (err) {
       if (String(err?.message).includes('NO_PENDING_APPROVAL')) {
@@ -1784,13 +1789,15 @@ export default function ChatScreen() {
     }
   };
 
-  const handleReject = async () => {
+  const handleReject = async (reason) => {
     if (!profile || !pendingApproval) return;
     const approval = pendingApproval;
+    const rejectReason = typeof reason === 'string' ? reason : undefined;
+
     setPendingApproval(null);
     setAgentStatus('idle');
     try {
-      await sendReject(profile, approval.requestId);
+      await sendReject(profile, approval.requestId, rejectReason, selectedWindowId || undefined);
       await loadMessages(currentSessionId || undefined);
     } catch (err) {
       if (String(err?.message).includes('NO_PENDING_APPROVAL')) {
@@ -2499,68 +2506,12 @@ export default function ChatScreen() {
         animationType="slide"
         onRequestClose={() => {}}
       >
-        <View style={styles.approvalOverlay}>
-          <View style={[styles.approvalSheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-            <View style={styles.approvalHandle} />
-            <View style={styles.approvalBadgeRow}>
-              <View style={[styles.approvalKindBadge, { backgroundColor: `${theme.warning || '#f59e0b'}22`, borderColor: `${theme.warning || '#f59e0b'}55` }]}>
-                <Text style={[styles.approvalKindText, { color: theme.warning || '#f59e0b' }]}>
-                  {pendingApproval?.kind?.toUpperCase().replace(/_/g, ' ') || 'APPROVAL REQUIRED'}
-                </Text>
-              </View>
-            </View>
-            <Text style={[styles.approvalTitle, { color: theme.text }]}>Agent Requesting Approval</Text>
-            <Text style={[styles.approvalSummary, { color: theme.muted }]}>
-              {pendingApproval?.summary || 'The agent is requesting your approval to continue.'}
-            </Text>
-
-            {Boolean(pendingApproval?.command) && (
-              <View style={[styles.approvalCodeBox, { backgroundColor: theme.raised, borderColor: theme.border }]}>
-                <Text style={[styles.approvalCodeText, { color: theme.text }]} numberOfLines={4}>
-                  {pendingApproval.command}
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.approvalOptionsCol}>
-              <TouchableOpacity
-                style={[styles.approvalStageBtn, { backgroundColor: theme.accent }]}
-                onPress={() => handleApprove('once')}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.approvalStageBtnNum}>1</Text>
-                <Text style={styles.approvalStageBtnText}>Yes, allow this time</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
-                onPress={() => handleApprove('conversation')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>2</Text>
-                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, always in this conversation</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.approvalStageBtn, { backgroundColor: theme.raised, borderColor: theme.border, borderWidth: 1 }]}
-                onPress={() => handleApprove('always')}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.approvalStageBtnNum, { color: theme.muted }]}>3</Text>
-                <Text style={[styles.approvalStageBtnText, { color: theme.text }]}>Yes, and always allow</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.approvalStageRejectBtn, { borderColor: theme.border }]}
-                onPress={handleReject}
-                activeOpacity={0.75}
-              >
-                <Icon name="x" size={16} color={theme.danger || '#ef4444'} />
-                <Text style={[styles.approvalRejectText, { color: theme.danger || '#ef4444' }]}>No (Reject)</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+        <ApprovalCard
+          approval={pendingApproval}
+          onApprove={handleApprove}
+          onReject={handleReject}
+          onDismiss={() => setPendingApproval(null)}
+        />
       </Modal>
     </View>
   );

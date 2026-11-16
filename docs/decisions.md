@@ -439,3 +439,16 @@ Record of decisions, discoveries, and rationale for AG Remote.
   - Dispatches phone REST-over-WS requests (`{k:'req'}`) to internal BridgeServer loopback endpoints and multiplexes live agent events (`{k:'evt'}`) encrypted to connected peers.
 - **Mobile Relay Transport (`relay-link.js`):**
   - Integrated `RelayLink` in the mobile app, with seamless auto-failover in `authenticatedRequest`: attempts direct local/Tailscale HTTP first and falls back to encrypted relay transport if unreachable.
+
+## 2026-11-16: Phase 4 Approval Fidelity Upgrade & Kind-Specific Cards
+- **Interactive Kind-Specific Approval Cards (`ApprovalCard.js`):**
+  - Created dedicated, contextual approval card UI components replacing generic one-size-fits-all prompts.
+  - `runCommand`: Command preview with an editable text input allowing users to tweak command flags or parameters before approval, with "Run Once", "Allow for Session", and "Reject" options.
+  - `filePermission`: Displays target file path alongside an embedded syntax-colored `DiffViewer` highlighting additions in green, deletions in red, and hunk line headers in purple.
+  - `openBrowserUrl` / `readUrlContent`: Renders external URL link previews with host badges and quick external browser launch triggers.
+  - `mcp`: Specialized tool inspector displaying tool names and expandable formatted argument payloads.
+  - `ask_question`: Renders interactive multiple-choice selectable options forwarding both index and option text to Antigravity.
+  - Rejection feedback: Provides an optional rejection reason input allowing users to explain why an action was declined so the agent can adapt.
+- **ConnectRPC Proto Builders Integration:**
+  - Integrated `interactionBuilder.ts` handling exact ConnectRPC payload schemas across all 12 Antigravity interaction types.
+  - Endpoints on the bridge (`POST /v1/approvals/:id`) parse client parameters (`scope`, `response`, `option`) and map them directly to language server interaction resolution.
