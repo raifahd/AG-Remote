@@ -169,4 +169,37 @@ export async function saveCachedMessages(sessionId, messages) {
   } catch {}
 }
 
+const E2E_IDENTITY_KEY = 'ag_remote_e2e_identity_v1';
+const RELAY_PROFILES_PREFIX = 'ag_remote_relay_profile_';
+
+export async function getStoredE2EIdentity() {
+  try {
+    const raw = await getItem(E2E_IDENTITY_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveStoredE2EIdentity(exportedIdentity) {
+  try {
+    await setItem(E2E_IDENTITY_KEY, JSON.stringify(exportedIdentity));
+  } catch {}
+}
+
+export async function getRelayProfile(profileId) {
+  try {
+    const raw = await getItem(`${RELAY_PROFILES_PREFIX}${profileId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveRelayProfile(profileId, relayData) {
+  try {
+    await setItem(`${RELAY_PROFILES_PREFIX}${profileId}`, JSON.stringify(relayData));
+  } catch {}
+}
+
 

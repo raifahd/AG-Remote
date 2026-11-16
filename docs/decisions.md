@@ -425,3 +425,17 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **Mobile Project Window Switcher:**
   - Added `fetchWindows` and `selectWindow` to the mobile API client.
   - Added a horizontal scrollable Window Tab Bar at the top of the mobile chat screen, visible whenever multiple windows are registered. Users can tap to instantly switch between active IDE windows and their conversation streams.
+
+
+## 2026-11-16: Phase 3 E2E Encrypted Relay Architecture
+- **Zero-Cloud End-to-End Encryption Protocol (`e2e.ts`):**
+  - Implemented Noise "KK" pattern using WebCrypto (`globalThis.crypto.subtle`). Uniformly supports Node.js 20+, modern browser engines, and React Native (Hermes).
+  - Pairing Phase: Host generates a 16-byte random pairing secret embedded in the QR `#fragment` (never transmitted to the relay). Phone derives HMAC-SHA256 over pairing transcript. Both parties compute and display a matching 4-digit check code for verification. Host explicitly confirms new phone pairings via modal prompt.
+  - Session Phase: Ephemeral ECDH key exchange generates bidirectional forward-secret AES-256-GCM symmetric session keys (`h2p` and `p2h`) derived with HKDF-SHA256, strictly rejecting replayed or out-of-order counter values (`n`).
+  - Frame Splitting & Assembly: Payloads larger than 40 KB are split into 30 KB chunks with random message IDs, allowing reliable transfer within the relay's 64 KB WebSocket frame limit, reassembled by `Assembler`.
+- **RelayHost & Persistent Store:**
+  - `RelayStore` securely persists the host's long-term EC key pair, room ID, and paired device records using `SecretStore`.
+  - `RelayHost` maintains an outbound WebSocket connection to `remote.taqnik.in`, handling automatic reconnection with exponential backoff (1s to 30s) and ping heartbeats.
+  - Dispatches phone REST-over-WS requests (`{k:'req'}`) to internal BridgeServer loopback endpoints and multiplexes live agent events (`{k:'evt'}`) encrypted to connected peers.
+- **Mobile Relay Transport (`relay-link.js`):**
+  - Integrated `RelayLink` in the mobile app, with seamless auto-failover in `authenticatedRequest`: attempts direct local/Tailscale HTTP first and falls back to encrypted relay transport if unreachable.

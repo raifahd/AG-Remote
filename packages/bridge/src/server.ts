@@ -25,6 +25,7 @@ import { NtfyNotifier } from './notifier.js';
 import { getMobileVersionState } from './versioning.js';
 import { WindowRegistry } from './core/window-registry.js';
 import { MultiWindowManager } from './core/multiWindowManager.js';
+import { RelayHost } from './relay-host/relay-host.js';
 
 export interface ServerConfig {
   port: number;
@@ -47,6 +48,7 @@ export class BridgeServer {
   private readonly windowRegistry: WindowRegistry;
   private readonly multiWindowManager: MultiWindowManager;
   private readonly notifier?: NtfyNotifier | undefined;
+  private relayHost?: RelayHost | undefined;
   private readonly app: express.Express;
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -60,7 +62,8 @@ export class BridgeServer {
     rateLimiter = new RateLimiter(),
     notifier?: NtfyNotifier | undefined,
     pairingManager = new PairingManager(),
-    multiWindowManager?: MultiWindowManager | undefined
+    multiWindowManager?: MultiWindowManager | undefined,
+    relayHost?: RelayHost | undefined
   ) {
     this.config = config;
     this.uploadDir = config.uploadDir || path.join(process.cwd(), '.ag-remote', 'uploads');
@@ -70,6 +73,7 @@ export class BridgeServer {
     this.rateLimiter = rateLimiter;
     this.notifier = notifier;
     this.pairingManager = pairingManager;
+    this.relayHost = relayHost;
     const defaultHostId = config.workspacePath
       ? Buffer.from(config.workspacePath).toString('hex').slice(0, 12)
       : 'primary-window';
@@ -105,6 +109,14 @@ export class BridgeServer {
 
   getMultiWindowManager(): MultiWindowManager {
     return this.multiWindowManager;
+  }
+
+  getRelayHost(): RelayHost | undefined {
+    return this.relayHost;
+  }
+
+  setRelayHost(rh: RelayHost): void {
+    this.relayHost = rh;
   }
 
   private configureApp(): void {
@@ -628,6 +640,7 @@ export class BridgeServer {
         socket.send(serialized);
       }
     }
+    this.relayHost?.broadcastEvent(event);
   }
 
   async start(): Promise<void> {

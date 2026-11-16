@@ -5,6 +5,8 @@ import { TokenManager, SecretStore, FileSecretStore } from './auth.js';
 import { SdkAdapter } from './adapters/SdkAdapter.js';
 import { AgentStateMachine } from './stateMachine.js';
 import { NtfyNotifier } from './notifier.js';
+import { RelayStore } from './relay-host/relay-store.js';
+import { RelayHost, RelayStatus } from './relay-host/relay-host.js';
 
 class VsCodeSecretStore implements SecretStore {
   private readonly secrets: vscode.SecretStorage;
@@ -38,7 +40,10 @@ let workerInstance: WorkerSession | null = null;
 let statusBarItem: vscode.StatusBarItem | null = null;
 let tokenManagerInstance: TokenManager | null = null;
 let notifierInstance: NtfyNotifier | null = null;
+let relayStoreInstance: RelayStore | null = null;
+let relayHostInstance: RelayHost | null = null;
 let outputChannel: vscode.OutputChannel | null = null;
+let currentRelayStatus: RelayStatus = 'stopped';
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   outputChannel = vscode.window.createOutputChannel('AG Remote');
@@ -59,6 +64,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   tokenManagerInstance = new TokenManager(secretStore, isFallback);
   notifierInstance = new NtfyNotifier(secretStore);
+  relayStoreInstance = new RelayStore(secretStore);
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.command = 'ag-remote.showQr';
@@ -71,6 +77,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const stopCmd = vscode.commands.registerCommand('ag-remote.stop', async () => {
     await stopBridge();
+  });
+
+  const restartCmd = vscode.commands.registerCommand('ag-remote.restartServer', async () => {
+    await stopBridge();
+    await startBridge();
   });
 
   const showQrCmd = vscode.commands.registerCommand('ag-remote.showQr', async () => {
@@ -102,7 +113,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   });
 
-  context.subscriptions.push(startCmd, stopCmd, showQrCmd, regenTokenCmd, testPushCmd);
+  const managePhonesCmd = vscode.commands.registerCommand('ag-remote.managePhones', async () => {
+    if (!relayStoreInstance) return;
+    await relayStoreInstance.init();
+    const phones = relayStoreInstance.getPairedPhones();
+    if (phones.length === 0) {
+      vscode.window.showInformationMessage('AG Remote: No phones are currently paired via E2E Relay.');
+      return;
+    }
+    const items = phones.map((p) => ({
+      label: p.name,
+      description: `Added: ${new Date(p.addedAt).toLocaleDateString()} · Last seen: ${new Date(p.lastSeen).toLocaleTimeString()}`,
+      pub: p.pub
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Select a paired phone to manage'
+    });
+    if (!picked) return;
+
+    const action = await vscode.window.showWarningMessage(
+      `Revoke pairing for "${picked.label}"?`,
+      { modal: true },
+      'Revoke Device',
+      'Cancel'
+    );
+    if (action === 'Revoke Device') {
+      await relayStoreInstance.removePaired(picked.pub);
+      vscode.window.showInformationMessage(`AG Remote: Revoked pairing for "${picked.label}".`);
+    }
+  });
+
+  const revokePairingsCmd = vscode.commands.registerCommand('ag-remote.revokePairings', async () => {
+    if (!relayStoreInstance) return;
+    const confirm = await vscode.window.showWarningMessage(
+      'Revoke ALL paired phones and regenerate E2E room identity?',
+      { modal: true },
+      'Revoke All',
+      'Cancel'
+    );
+    if (confirm === 'Revoke All') {
+      await relayStoreInstance.resetIdentity();
+      vscode.window.showInformationMessage('AG Remote: All phone pairings revoked and E2E identity reset.');
+      if (relayHostInstance) {
+        await stopBridge();
+        await startBridge();
+      }
+    }
+  });
+
+  context.subscriptions.push(
+    startCmd,
+    stopCmd,
+    restartCmd,
+    showQrCmd,
+    regenTokenCmd,
+    testPushCmd,
+    managePhonesCmd,
+    revokePairingsCmd
+  );
 }
 
 export async function deactivate(): Promise<void> {
@@ -172,9 +240,35 @@ async function startBridge(): Promise<void> {
 
   try {
     await serverInstance.start();
-    updateStatusBar('hub', host, port);
+    updateStatusBar('hub', host, port, 'connecting');
     vscode.window.showInformationMessage(`AG Remote: Hub listening on http://${host}:${port}`);
     outputChannel?.appendLine(`Bridge Hub started at http://${host}:${port}`);
+
+    if (relayStoreInstance) {
+      await relayStoreInstance.init();
+      const localToken = await tokenManagerInstance.getOrCreateToken();
+      relayHostInstance = new RelayHost({
+        relayUrl: 'https://remote.taqnik.in',
+        store: relayStoreInstance,
+        localApiBase: `http://127.0.0.1:${port}`,
+        localToken,
+        onStatus: (st) => {
+          currentRelayStatus = st;
+          updateStatusBar('hub', host, port, st);
+        },
+        onApprovalNeeded: async (req) => {
+          const action = await vscode.window.showInformationMessage(
+            `AG Remote: Pair request from "${req.name}" (Check code: ${req.code})`,
+            { modal: true },
+            'Allow',
+            'Deny'
+          );
+          req.resolve(action === 'Allow');
+        }
+      });
+      serverInstance.setRelayHost(relayHostInstance);
+      relayHostInstance.start();
+    }
   } catch (err: unknown) {
     adapterInstance.stopPolling();
     adapterInstance = null;
@@ -267,6 +361,10 @@ async function stopBridge(): Promise<void> {
     outputChannel?.appendLine('Worker disconnected.');
     return;
   }
+  if (relayHostInstance) {
+    relayHostInstance.stop();
+    relayHostInstance = null;
+  }
   if (adapterInstance) {
     adapterInstance.stopPolling();
     adapterInstance = null;
@@ -283,14 +381,16 @@ async function stopBridge(): Promise<void> {
 function updateStatusBar(
   status: 'hub' | 'worker' | 'worker-disconnected' | 'stopped',
   host?: string,
-  port?: number
+  port?: number,
+  relaySt?: RelayStatus
 ): void {
   if (!statusBarItem) {
     return;
   }
   if (status === 'hub') {
-    statusBarItem.text = `$(broadcast) AG Remote: Hub (:${port})`;
-    statusBarItem.tooltip = `AG Remote Hub is running at http://${host}:${port}. Click to show pairing details.`;
+    const relayPart = relaySt === 'online' ? ' · Relay: Online' : (relaySt === 'connecting' ? ' · Relay: Connecting' : '');
+    statusBarItem.text = `$(broadcast) AG Remote: Hub (:${port})${relayPart}`;
+    statusBarItem.tooltip = `AG Remote Hub is running at http://${host}:${port}. Relay status: ${relaySt ?? 'unknown'}. Click to show pairing details.`;
     statusBarItem.show();
   } else if (status === 'worker') {
     statusBarItem.text = `$(link) AG Remote: Worker (:${port})`;
@@ -346,6 +446,18 @@ async function showPairingView(): Promise<void> {
   const baseUrl = tailscaleIp ? `http://${tailscaleIp}:48123` : 'http://<tailscale-ip>:48123';
   const pairingPayload = JSON.stringify({ baseUrl, token, ntfyTopic });
 
+  let relayUrl = '';
+  let shortCode = '';
+  let roomId = '';
+  if (relayHostInstance && relayStoreInstance) {
+    try {
+      const p = await relayHostInstance.createPairingUrl();
+      relayUrl = p.url;
+      shortCode = p.code || '';
+      roomId = relayStoreInstance.room;
+    } catch {}
+  }
+
   const panel = vscode.window.createWebviewPanel(
     'agRemotePairing',
     'AG Remote Pairing',
@@ -363,17 +475,31 @@ async function showPairingView(): Promise<void> {
     .box { background: var(--vscode-editor-background); padding: 16px; border-radius: 8px; border: 1px solid var(--vscode-widget-border); margin: 16px 0; }
     code { font-family: monospace; background: var(--vscode-textCodeBlock-background); padding: 2px 6px; border-radius: 4px; word-break: break-all; }
     h2 { margin-top: 0; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
   </style>
 </head>
 <body>
   <h2>AG Remote Pairing</h2>
   <p>Scan or enter these credentials into your AG Remote phone app.</p>
+
+  ${relayUrl ? `
   <div class="box">
+    <h3>🌐 Zero-Cloud E2E Encrypted Relay</h3>
+    <p>Status: <span class="badge">${currentRelayStatus.toUpperCase()}</span></p>
+    <p><strong>Relay Pairing URL:</strong> <code>${relayUrl}</code></p>
+    ${shortCode ? `<p><strong>6-Character Short Code:</strong> <code>${shortCode}</code></p>` : ''}
+    <p><strong>Room ID:</strong> <code>${roomId}</code></p>
+    <p><small>Connects end-to-end with ECDH P-256 and AES-256-GCM. No port forwarding or public IP required.</small></p>
+  </div>
+  ` : ''}
+
+  <div class="box">
+    <h3>🔒 Direct Network Access (Tailscale / LAN)</h3>
     <p><strong>Base URL:</strong> <code>${baseUrl}</code></p>
     <p><strong>Bearer Token:</strong> <code>${token}</code></p>
     <p><strong>ntfy Topic:</strong> <code>${ntfyTopic}</code></p>
     <p><strong>ntfy URL:</strong> <a href="https://ntfy.sh/${ntfyTopic}">https://ntfy.sh/${ntfyTopic}</a></p>
-    <p><strong>Pairing JSON:</strong> <code>${pairingPayload}</code></p>
+    <p><strong>Direct Pairing JSON:</strong> <code>${pairingPayload}</code></p>
   </div>
   <p>Status: ${serverInstance ? 'Bridge is RUNNING as HUB' : 'Bridge is STOPPED'}</p>
 </body>

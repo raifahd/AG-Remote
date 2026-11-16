@@ -233,9 +233,21 @@ export async function uploadFile(profile, asset) {
 }
 
 async function authenticatedRequest(profile, pathname, method, body = null, timeoutMs = 15000) {
-  if (!profile || !profile.baseUrl || !profile.token) {
+  if (!profile) {
     throw new Error('Profile missing or incomplete');
   }
+
+  if (profile.transport === 'relay' && profile._relayLink && profile._relayLink.status === 'ready') {
+    return profile._relayLink.request(pathname, method, body, timeoutMs);
+  }
+
+  if (!profile.baseUrl || !profile.token) {
+    if (profile._relayLink && profile._relayLink.status === 'ready') {
+      return profile._relayLink.request(pathname, method, body, timeoutMs);
+    }
+    throw new Error('Profile missing or incomplete');
+  }
+
   const url = `${profile.baseUrl.replace(/\/+$/, '')}${pathname}`;
   const headers = {
     'Authorization': `Bearer ${profile.token}`
@@ -270,6 +282,9 @@ async function authenticatedRequest(profile, pathname, method, body = null, time
   } catch (err) {
     if (err.name === 'AbortError') {
       throw new Error('Request timed out. Please check your network connection.');
+    }
+    if (profile._relayLink && profile._relayLink.status === 'ready') {
+      return profile._relayLink.request(pathname, method, body, timeoutMs);
     }
     throw err;
   } finally {

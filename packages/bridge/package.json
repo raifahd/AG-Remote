@@ -33,6 +33,14 @@
       {
         "command": "ag-remote.regenerateToken",
         "title": "AG Remote: Regenerate Token"
+      },
+      {
+        "command": "ag-remote.managePhones",
+        "title": "AG Remote: Manage Paired Phones"
+      },
+      {
+        "command": "ag-remote.revokePairings",
+        "title": "AG Remote: Revoke All Phone Pairings"
       }
     ]
   },
