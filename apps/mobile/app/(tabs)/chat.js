@@ -1193,6 +1193,10 @@ export default function ChatScreen() {
   const [modelsModalVisible, setModelsModalVisible] = useState(false);
   const [pendingApproval, setPendingApproval] = useState(null);
 
+  const currentSessionStatus = currentSessionId ? (sessionStatuses[currentSessionId] || agentStatus) : agentStatus;
+  const isWorking = currentSessionStatus === 'generating';
+  const isAwaitingApproval = currentSessionStatus === 'awaiting_approval';
+
   const flatListRef = useRef(null);
   const defaultBottomMargin = Math.max(insets.bottom, 8) + 80;
   const composerBottomAnim = useRef(new Animated.Value(defaultBottomMargin)).current;
@@ -1849,9 +1853,6 @@ export default function ChatScreen() {
     }
   };
 
-  const currentSessionStatus = currentSessionId ? (sessionStatuses[currentSessionId] || agentStatus) : agentStatus;
-  const isWorking = currentSessionStatus === 'generating';
-  const isAwaitingApproval = currentSessionStatus === 'awaiting_approval';
   const canSend = !sending && !isAwaitingApproval && (Boolean(inputText.trim()) || attachments.length > 0);
 
   const latestUserMsg = useMemo(() => {
