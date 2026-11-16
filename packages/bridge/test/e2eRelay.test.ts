@@ -182,3 +182,4 @@ describe('Phase 3 E2E: RelayStore State Management', () => {
     expect(relayStore2.getPairedPhones()[0]?.name).toBe('Pixel 9');
   });
 });
+

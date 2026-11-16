@@ -136,3 +136,4 @@ export class RelayStore {
     await this.secretStore.store(STORAGE_KEY, JSON.stringify(data));
   }
 }
+
