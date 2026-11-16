@@ -31,7 +31,18 @@ import {
   SelectWindowRequestSchema,
   HubRegisterRequestSchema,
   HubHeartbeatRequestSchema,
-  WindowsChangedEventSchema
+  WindowsChangedEventSchema,
+  TerminalOutputEventSchema,
+  TerminalExecRequestSchema,
+  TerminalKillRequestSchema,
+  TerminalAllowlistResponseSchema,
+  FsItemSchema,
+  FsRootSchema,
+  FsRootsResponseSchema,
+  FsListResponseSchema,
+  FsReadResponseSchema,
+  FsOpenRequestSchema,
+  FsOpenResponseSchema
 } from './schemas.js';
 
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
@@ -68,4 +79,17 @@ export type SessionCreatedEvent = z.infer<typeof SessionCreatedEventSchema>;
 export type ActiveSessionChangedEvent = z.infer<typeof ActiveSessionChangedEventSchema>;
 export type BridgeErrorEvent = z.infer<typeof BridgeErrorEventSchema>;
 export type AgentEvent = z.infer<typeof AgentEventSchema>;
+export const TerminalOutputEventSchemaExport = TerminalOutputEventSchema;
+export type TerminalOutputEvent = z.infer<typeof TerminalOutputEventSchema>;
+export type TerminalExecRequest = z.infer<typeof TerminalExecRequestSchema>;
+export type TerminalKillRequest = z.infer<typeof TerminalKillRequestSchema>;
+export type TerminalAllowlistResponse = z.infer<typeof TerminalAllowlistResponseSchema>;
+export type FsItem = z.infer<typeof FsItemSchema>;
+export type FsRoot = z.infer<typeof FsRootSchema>;
+export type FsRootsResponse = z.infer<typeof FsRootsResponseSchema>;
+export type FsListResponse = z.infer<typeof FsListResponseSchema>;
+export type FsReadResponse = z.infer<typeof FsReadResponseSchema>;
+export type FsOpenRequest = z.infer<typeof FsOpenRequestSchema>;
+export type FsOpenResponse = z.infer<typeof FsOpenResponseSchema>;
+
 

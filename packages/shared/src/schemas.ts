@@ -7,7 +7,11 @@ export const ErrorCodeSchema = z.enum([
   'STALE_REQUEST',
   'ADAPTER_UNAVAILABLE',
   'RATE_LIMITED',
-  'NOT_FOUND'
+  'NOT_FOUND',
+  'TERMINAL_DISABLED',
+  'TERMINAL_DISALLOWED',
+  'TERMINAL_SHELL_INJECTION',
+  'FS_ACCESS_DENIED'
 ]);
 
 export const ApiErrorSchema = z.object({
@@ -251,6 +255,15 @@ export const WindowsChangedEventSchema = z.object({
   at: z.number().int().nonnegative()
 }).strict();
 
+export const TerminalOutputEventSchema = z.object({
+  type: z.literal('terminal_output'),
+  sessionId: z.string(),
+  chunk: z.string(),
+  done: z.boolean(),
+  exitCode: z.number().nullable().optional(),
+  at: z.number().int().nonnegative()
+}).strict();
+
 export const AgentEventSchema = z.discriminatedUnion('type', [
   StatusChangedEventSchema,
   ApprovalRequestedEventSchema,
@@ -259,7 +272,8 @@ export const AgentEventSchema = z.discriminatedUnion('type', [
   SessionCreatedEventSchema,
   ActiveSessionChangedEventSchema,
   BridgeErrorEventSchema,
-  WindowsChangedEventSchema
+  WindowsChangedEventSchema,
+  TerminalOutputEventSchema
 ]);
 
 export const CreateSessionRequestSchema = z.object({
@@ -316,5 +330,71 @@ export const UploadResponseSchema = z.object({
 }).strict();
 
 export type UploadResponse = z.infer<typeof UploadResponseSchema>;
+
+export const TerminalExecRequestSchema = z.object({
+  command: z.string().min(1),
+  argv: z.array(z.string()).optional(),
+  sessionId: z.string().optional(),
+  windowId: z.string().optional(),
+  cwd: z.string().optional()
+}).strict();
+
+export const TerminalKillRequestSchema = z.object({
+  sessionId: z.string().optional()
+}).strict();
+
+export const TerminalAllowlistResponseSchema = z.object({
+  enabled: z.boolean(),
+  allowlist: z.array(z.string()),
+  cwd: z.string()
+}).strict();
+
+export const FsItemSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  isDirectory: z.boolean(),
+  size: z.number().int().nonnegative(),
+  mtime: z.number().int().nonnegative(),
+  isHidden: z.boolean().optional()
+}).strict();
+
+export const FsRootSchema = z.object({
+  name: z.string(),
+  path: z.string()
+}).strict();
+
+export const FsRootsResponseSchema = z.object({
+  roots: z.array(FsRootSchema),
+  currentRoot: z.string(),
+  defaultWorkspace: z.string().optional()
+}).strict();
+
+export const FsListResponseSchema = z.object({
+  path: z.string(),
+  parent: z.string().nullable(),
+  items: z.array(FsItemSchema),
+  isWorkspace: z.boolean().optional()
+}).strict();
+
+export const FsReadResponseSchema = z.object({
+  path: z.string(),
+  name: z.string(),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+  isBinary: z.boolean(),
+  language: z.string().optional()
+}).strict();
+
+export const FsOpenRequestSchema = z.object({
+  path: z.string().min(1),
+  newWindow: z.boolean().optional()
+}).strict();
+
+export const FsOpenResponseSchema = z.object({
+  ok: z.literal(true),
+  opened: z.string(),
+  message: z.string().optional()
+}).strict();
+
 
 

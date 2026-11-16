@@ -316,3 +316,34 @@ export async function checkAppVersion(baseUrl, token, clientVersion, clientBuild
   }
 }
 
+export async function fetchTerminalAllowlist(profile) {
+  return authenticatedRequest(profile, '/v1/terminal/allowlist', 'GET');
+}
+
+export async function execTerminal(profile, payload) {
+  return authenticatedRequest(profile, '/v1/terminal/exec', 'POST', payload, 35000);
+}
+
+export async function killTerminal(profile, payload = {}) {
+  return authenticatedRequest(profile, '/v1/terminal/kill', 'POST', payload);
+}
+
+export async function fetchFsRoots(profile) {
+  return authenticatedRequest(profile, '/v1/fs/roots', 'GET');
+}
+
+export async function fetchFsList(profile, dirPath) {
+  const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : '';
+  return authenticatedRequest(profile, `/v1/fs/list${query}`, 'GET');
+}
+
+export async function fetchFsRead(profile, filePath) {
+  const query = `?path=${encodeURIComponent(filePath)}`;
+  return authenticatedRequest(profile, `/v1/fs/read${query}`, 'GET');
+}
+
+export async function openFsFolder(profile, payload) {
+  return authenticatedRequest(profile, '/v1/fs/open', 'POST', payload);
+}
+
+

@@ -452,3 +452,34 @@ Record of decisions, discoveries, and rationale for AG Remote.
 - **ConnectRPC Proto Builders Integration:**
   - Integrated `interactionBuilder.ts` handling exact ConnectRPC payload schemas across all 12 Antigravity interaction types.
   - Endpoints on the bridge (`POST /v1/approvals/:id`) parse client parameters (`scope`, `response`, `option`) and map them directly to language server interaction resolution.
+
+## 2026-11-16: Phase 5 Sandboxed Terminal Access Module
+- **Strict Security Enforcement (Rule R-28):**
+  - All command invocations are executed directly via `child_process.spawn` using explicit argv arrays, completely rejecting shell invocation (`shell: false`).
+  - Shell metacharacters (`;`, `&&`, `||`, `|`, `>`, `<`, backticks, `$()`, `${}`) are strictly rejected with `TERMINAL_SHELL_INJECTION`.
+  - Enforced command allowlist matching the executable name (`git`, `npm`, `pnpm`, `node`, `python`, `python3`, `ls`, `cat`, `pwd`, `echo`, `which`, `find`, `grep`, `cargo`, `go`, `docker`).
+  - Strict 30-second execution timeout kills runaway processes, and 1 MB max output limit prevents memory bloat with automatic truncation warnings.
+  - Stripped environment preserves only safe standard variables (`HOME`, `PATH`, `USER`, `LANG`, `SHELL`, `TERM`), preventing IDE secrets or internal tokens from leaking to child processes.
+  - Intercepted `cd <path>` to update session working directory in-place rather than spawning a detached process.
+- **Mobile Terminal UI (`terminal.js`):**
+  - Integrated a dedicated Terminal screen featuring an OLED-black monospace viewport, live prompt prefix, streaming output updates, and ANSI escape code stripping.
+  - Horizontal quick-command chips (`git status`, `git diff`, `git log`, `npm test`, `ls -la`) for one-tap execution.
+  - Command input with history traversal (up/down recall saving last 25 commands in local storage).
+  - "Inject into Chat" button allowing users to send terminal output directly to Antigravity for automated diagnosis.
+
+## 2026-11-16: Phase 6 PC Folder Browser & "Open in Antigravity"
+- **Safe Directory Browsing (Rule R-29):**
+  - Path resolution strictly validates all directory queries against `agRemote.fsBrowserRoot` (defaulting to user home) and workspace boundaries, throwing `FS_ACCESS_DENIED` upon traversal attempts. Symlinks escaping root are rejected.
+  - Multi-root discovery reports home directory, current workspace, and all Windows drive roots (`C:\`, `D:\`).
+  - Directory listing sorts folders alphabetically first, followed by files, reporting file size and formatted modification dates.
+  - Read-only file preview serves text files up to 500 KB with automatic binary file detection (null byte check) and language inference based on file extensions.
+- **"Open in Antigravity" IDE Integration:**
+  - Bridge endpoint `POST /v1/fs/open` invokes `vscode.commands.executeCommand('vscode.openFolder', uri, { forceNewWindow })` to seamlessly open any browsed folder as a project in Antigravity.
+- **Mobile Explorer UI (`files.js`):**
+  - Interactive breadcrumb navigation bar allowing quick navigation to any ancestor directory.
+  - Real-time directory search/filter input.
+  - Prominent "Open in Antigravity" button on current folder banner.
+  - Long-press contextual action sheet for folders offering "Open in Antigravity" and "Open in New Window".
+  - Full-screen read-only file preview modal with language syntax badges.
+- **6-Tab Navigation Integration:**
+  - Added Terminal and Files to `apps/mobile/app/(tabs)/_layout.js` and `TabBar.js`, balancing tab label typography and padding for seamless 6-tab navigation.

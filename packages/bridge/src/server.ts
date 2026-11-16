@@ -16,6 +16,9 @@ import {
   SelectWindowRequestSchema,
   HubRegisterRequestSchema,
   HubHeartbeatRequestSchema,
+  TerminalExecRequestSchema,
+  TerminalKillRequestSchema,
+  FsOpenRequestSchema,
   AgentEvent,
   ApiError
 } from '@ag-remote/shared';
@@ -26,16 +29,23 @@ import { getMobileVersionState } from './versioning.js';
 import { WindowRegistry } from './core/window-registry.js';
 import { MultiWindowManager } from './core/multiWindowManager.js';
 import { RelayHost } from './relay-host/relay-host.js';
+import { TerminalRunner } from './terminal/terminal-runner.js';
+import { FsBrowser } from './fs/fs-browser.js';
 
 export interface ServerConfig {
   port: number;
   host: string;
   version: string;
   adapterMode: 'sdk' | 'cdp' | 'fake';
-  uploadDir?: string;
-  workspacePath?: string;
-  workspaceName?: string;
+  uploadDir?: string | undefined;
+  workspacePath?: string | undefined;
+  workspaceName?: string | undefined;
+  terminalEnabled?: boolean | undefined;
+  terminalAllowlist?: string[] | undefined;
+  fsBrowserEnabled?: boolean | undefined;
+  fsBrowserRoot?: string | undefined;
   createAdapter?: ((workspacePath: string, pid?: number | undefined) => AgentAdapter) | undefined;
+  openFolderCallback?: ((folderPath: string, newWindow?: boolean) => Promise<void>) | undefined;
 }
 
 export class BridgeServer {
@@ -49,6 +59,8 @@ export class BridgeServer {
   private readonly multiWindowManager: MultiWindowManager;
   private readonly notifier?: NtfyNotifier | undefined;
   private relayHost?: RelayHost | undefined;
+  private readonly terminalRunner: TerminalRunner;
+  private readonly fsBrowser: FsBrowser;
   private readonly app: express.Express;
   private httpServer: http.Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -91,8 +103,40 @@ export class BridgeServer {
       pid: process.pid
     });
 
+    this.terminalRunner = new TerminalRunner({
+      enabled: config.terminalEnabled ?? true,
+      allowlist: config.terminalAllowlist,
+      defaultCwd: config.workspacePath ?? process.cwd()
+    });
+
+    this.fsBrowser = new FsBrowser({
+      enabled: config.fsBrowserEnabled ?? true,
+      rootPath: config.fsBrowserRoot,
+      defaultWorkspace: config.workspacePath ?? process.cwd(),
+      openFolderCallback: config.openFolderCallback
+    });
+
+    this.terminalRunner.on('output', (evt) => {
+      this.broadcastEvent({
+        type: 'terminal_output',
+        sessionId: evt.sessionId,
+        chunk: evt.chunk,
+        done: evt.done,
+        exitCode: evt.exitCode,
+        at: evt.at || Date.now()
+      });
+    });
+
     this.app = express();
     this.configureApp();
+  }
+
+  getTerminalRunner(): TerminalRunner {
+    return this.terminalRunner;
+  }
+
+  getFsBrowser(): FsBrowser {
+    return this.fsBrowser;
   }
 
   getAdapter(windowId?: string): AgentAdapter {
@@ -562,6 +606,111 @@ export class BridgeServer {
         this.notifier.setQuietHours(parsed.data.enabled, parsed.data.startHour, parsed.data.endHour);
       }
       res.json({ ok: true, quietHours: parsed.data });
+    });
+
+    // Terminal Routes
+    v1Router.get('/terminal/allowlist', (_req: Request, res: Response) => {
+      res.json({
+        enabled: this.terminalRunner.isEnabled(),
+        allowlist: this.terminalRunner.getAllowlist(),
+        cwd: this.terminalRunner.getCwd()
+      });
+    });
+
+    v1Router.post('/terminal/exec', async (req: Request, res: Response) => {
+      const parsed = TerminalExecRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      try {
+        const result = await this.terminalRunner.execute(
+          parsed.data.command,
+          parsed.data.argv,
+          parsed.data.sessionId,
+          parsed.data.cwd
+        );
+        res.json({ ok: true, ...result });
+      } catch (err: any) {
+        const code = err.code || 'ADAPTER_UNAVAILABLE';
+        if (code === 'TERMINAL_DISABLED' || code === 'TERMINAL_DISALLOWED') {
+          res.status(403).json(this.makeError(code, err.message));
+        } else if (code === 'TERMINAL_SHELL_INJECTION') {
+          res.status(400).json(this.makeError('TERMINAL_SHELL_INJECTION', err.message));
+        } else {
+          res.status(500).json(this.makeError('ADAPTER_UNAVAILABLE', err.message || 'Execution failed'));
+        }
+      }
+    });
+
+    v1Router.post('/terminal/kill', (req: Request, res: Response) => {
+      const parsed = TerminalKillRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      const killed = this.terminalRunner.kill(parsed.data.sessionId);
+      res.json({ ok: true, killed });
+    });
+
+    // File System Browser Routes
+    v1Router.get('/fs/roots', (_req: Request, res: Response) => {
+      try {
+        const roots = this.fsBrowser.getRoots();
+        res.json(roots);
+      } catch (err: any) {
+        res.status(500).json(this.makeError('ADAPTER_UNAVAILABLE', err.message));
+      }
+    });
+
+    v1Router.get('/fs/list', async (req: Request, res: Response) => {
+      try {
+        const targetPath = typeof req.query.path === 'string' ? req.query.path : this.fsBrowser.getRootPath();
+        const listing = await this.fsBrowser.listDirectory(targetPath);
+        res.json(listing);
+      } catch (err: any) {
+        if (err.code === 'FS_ACCESS_DENIED') {
+          res.status(403).json(this.makeError('FS_ACCESS_DENIED', err.message));
+        } else {
+          res.status(400).json(this.makeError('NOT_FOUND', err.message));
+        }
+      }
+    });
+
+    v1Router.get('/fs/read', async (req: Request, res: Response) => {
+      try {
+        const targetPath = typeof req.query.path === 'string' ? req.query.path : '';
+        if (!targetPath) {
+          res.status(400).json(this.makeError('INVALID_BODY', 'Missing file path'));
+          return;
+        }
+        const preview = await this.fsBrowser.readFilePreview(targetPath);
+        res.json(preview);
+      } catch (err: any) {
+        if (err.code === 'FS_ACCESS_DENIED') {
+          res.status(403).json(this.makeError('FS_ACCESS_DENIED', err.message));
+        } else {
+          res.status(400).json(this.makeError('NOT_FOUND', err.message));
+        }
+      }
+    });
+
+    v1Router.post('/fs/open', async (req: Request, res: Response) => {
+      const parsed = FsOpenRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json(this.makeError('INVALID_BODY', parsed.error.message));
+        return;
+      }
+      try {
+        const result = await this.fsBrowser.openFolder(parsed.data.path, parsed.data.newWindow);
+        res.json(result);
+      } catch (err: any) {
+        if (err.code === 'FS_ACCESS_DENIED') {
+          res.status(403).json(this.makeError('FS_ACCESS_DENIED', err.message));
+        } else {
+          res.status(400).json(this.makeError('NOT_FOUND', err.message));
+        }
+      }
     });
 
     this.app.use('/v1', v1Router);

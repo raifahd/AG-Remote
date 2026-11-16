@@ -1406,7 +1406,10 @@ export default function ChatScreen() {
       }
       loadMessages(params.sessionId);
     }
-  }, [params?.sessionId, params?.sessionTitle, loadMessages]);
+    if (params?.injectedPrompt) {
+      setInputText(params.injectedPrompt);
+    }
+  }, [params?.sessionId, params?.sessionTitle, params?.injectedPrompt, loadMessages]);
 
   useEffect(() => {
     if (!profile) return;

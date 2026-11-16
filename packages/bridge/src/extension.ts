@@ -1,3 +1,4 @@
+import os from 'os';
 import * as vscode from 'vscode';
 import { BridgeServer } from './server.js';
 import { getPreferredIpv4 } from './network.js';
@@ -211,6 +212,13 @@ async function startBridge(): Promise<void> {
       adapterMode: 'sdk',
       workspacePath: workspaceFolder,
       workspaceName: workspaceName,
+      terminalEnabled: vscode.workspace.getConfiguration('agRemote').get<boolean>('terminalEnabled', true),
+      terminalAllowlist: vscode.workspace.getConfiguration('agRemote').get<string[]>('terminalAllowlist', []),
+      fsBrowserEnabled: vscode.workspace.getConfiguration('agRemote').get<boolean>('fsBrowserEnabled', true),
+      fsBrowserRoot: vscode.workspace.getConfiguration('agRemote').get<string>('fsBrowserRoot', os.homedir()),
+      openFolderCallback: async (folderPath: string, newWindow?: boolean) => {
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(folderPath), { forceNewWindow: !!newWindow });
+      },
       createAdapter: (wsPath, pid) => {
         const sm = new AgentStateMachine({ debounceMs: 2000 });
         const a = new SdkAdapter(sm, {

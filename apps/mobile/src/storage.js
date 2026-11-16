@@ -202,4 +202,23 @@ export async function saveRelayProfile(profileId, relayData) {
   } catch {}
 }
 
+const TERMINAL_HISTORY_KEY = 'ag_remote_terminal_history_v1';
+
+export async function getTerminalHistory() {
+  try {
+    const raw = await getItem(TERMINAL_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveTerminalHistory(history) {
+  try {
+    const slice = Array.isArray(history) ? history.slice(-25) : [];
+    await setItem(TERMINAL_HISTORY_KEY, JSON.stringify(slice));
+  } catch {}
+}
+
+
 

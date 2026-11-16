@@ -8,6 +8,8 @@ import Icon from './Icon.js';
 const TABS = [
   { name: 'index', label: 'Home', icon: 'home', path: '/(tabs)' },
   { name: 'chat', label: 'Chat', icon: 'chat', path: '/(tabs)/chat' },
+  { name: 'terminal', label: 'Terminal', icon: 'terminal', path: '/(tabs)/terminal' },
+  { name: 'files', label: 'Files', icon: 'file', path: '/(tabs)/files' },
   { name: 'workspaces', label: 'Workspaces', icon: 'grid', path: '/(tabs)/workspaces' },
   { name: 'settings', label: 'Settings', icon: 'settings', path: '/(tabs)/settings' }
 ];
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   tabLabel: {
-    fontSize: 10,
+    fontSize: 8.5,
     fontFamily: fontMedium,
     textAlign: 'center',
     includeFontPadding: false,
