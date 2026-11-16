@@ -17,6 +17,7 @@ These rules are binding.
 - **R-8**: Do not claim something works unless you ran it. State exactly how you verified it.
 - **R-9**: If a test fails, fix the cause. Do not weaken or delete the test to make it pass.
 - **R-10**: If blocked after two attempts, stop and report the problem with the error output instead of trying risky workarounds.
+- **R-30**: **No Auto-Checking / Self-Testing**: The agent must NEVER automatically run exploratory checks, self-tests, or test suites on code or features it has created unless explicitly instructed by the user. The primary goal is flawless implementation with zero mistakes. The user is responsible for testing.
 
 ## Code Quality
 
