@@ -43,7 +43,6 @@ export function isVirtualAdapter(name: string, address: string): boolean {
 export function getLocalIpv4Addresses(): string[] {
   const interfaces = os.networkInterfaces();
   const physicalIps: string[] = [];
-  let tailscaleIp: string | null = null;
   const otherIps: string[] = [];
 
   for (const name of Object.keys(interfaces)) {
@@ -51,13 +50,10 @@ export function getLocalIpv4Addresses(): string[] {
     if (!list) continue;
     for (const net of list) {
       if (net.family === 'IPv4' && !net.internal) {
-        if (isTailscaleIpv4(net.address) || net.address.startsWith('100.')) {
-          tailscaleIp = net.address;
-        } else if (isVirtualAdapter(name, net.address)) {
-          // Deprioritize virtual adapters
+        if (isVirtualAdapter(name, net.address)) {
           otherIps.push(net.address);
         } else if (net.address.startsWith('192.168.') || net.address.startsWith('10.')) {
-          physicalIps.push(net.address);
+          physicalIps.unshift(net.address);
         } else {
           physicalIps.push(net.address);
         }
@@ -65,13 +61,7 @@ export function getLocalIpv4Addresses(): string[] {
     }
   }
 
-  const result: string[] = [];
-  if (tailscaleIp) {
-    result.push(tailscaleIp);
-  }
-  result.push(...physicalIps);
-  result.push(...otherIps);
-
+  const result: string[] = [...physicalIps, ...otherIps];
   if (result.length === 0) {
     result.push('127.0.0.1');
   }

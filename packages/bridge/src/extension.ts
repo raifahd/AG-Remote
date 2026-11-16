@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { BridgeServer } from './server.js';
-import { findTailscaleIpv4 } from './network.js';
+import { getPreferredIpv4 } from './network.js';
 import { TokenManager, SecretStore, FileSecretStore } from './auth.js';
 import { SdkAdapter } from './adapters/SdkAdapter.js';
 import { AgentStateMachine } from './stateMachine.js';
@@ -184,22 +184,12 @@ async function startBridge(): Promise<void> {
   }
 
   const port = 48123;
-  const tailscaleIp = findTailscaleIpv4();
-  const host = tailscaleIp ?? '127.0.0.1';
-
-  if (!tailscaleIp) {
-    vscode.window.showWarningMessage(
-      'AG Remote: Tailscale IPv4 address not found. Binding to local loopback (127.0.0.1).'
-    );
-  }
+  const host = '0.0.0.0';
+  const displayIp = getPreferredIpv4();
 
   if (!tokenManagerInstance) {
     vscode.window.showErrorMessage('AG Remote: TokenManager not initialized.');
     return;
-  }
-
-  if (notifierInstance && tailscaleIp) {
-    notifierInstance.setTailscaleIp(tailscaleIp);
   }
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
@@ -240,9 +230,9 @@ async function startBridge(): Promise<void> {
 
   try {
     await serverInstance.start();
-    updateStatusBar('hub', host, port, 'connecting');
-    vscode.window.showInformationMessage(`AG Remote: Hub listening on http://${host}:${port}`);
-    outputChannel?.appendLine(`Bridge Hub started at http://${host}:${port}`);
+    updateStatusBar('hub', displayIp, port, 'connecting');
+    vscode.window.showInformationMessage(`AG Remote: Hub listening on http://${displayIp}:${port}`);
+    outputChannel?.appendLine(`Bridge Hub started at http://${displayIp}:${port}`);
 
     if (relayStoreInstance) {
       await relayStoreInstance.init();
@@ -441,10 +431,9 @@ async function showPairingView(): Promise<void> {
     return;
   }
   const token = await tokenManagerInstance.getOrCreateToken();
-  const ntfyTopic = notifierInstance ? await notifierInstance.getOrCreateTopic() : 'none';
-  const tailscaleIp = findTailscaleIpv4();
-  const baseUrl = tailscaleIp ? `http://${tailscaleIp}:48123` : 'http://<tailscale-ip>:48123';
-  const pairingPayload = JSON.stringify({ baseUrl, token, ntfyTopic });
+  const displayIp = getPreferredIpv4();
+  const baseUrl = `http://${displayIp}:48123`;
+  const pairingPayload = JSON.stringify({ baseUrl, token });
 
   let relayUrl = '';
   let shortCode = '';
@@ -494,11 +483,9 @@ async function showPairingView(): Promise<void> {
   ` : ''}
 
   <div class="box">
-    <h3>🔒 Direct Network Access (Tailscale / LAN)</h3>
+    <h3>🔒 Direct Local Network (Wi-Fi / Ethernet)</h3>
     <p><strong>Base URL:</strong> <code>${baseUrl}</code></p>
     <p><strong>Bearer Token:</strong> <code>${token}</code></p>
-    <p><strong>ntfy Topic:</strong> <code>${ntfyTopic}</code></p>
-    <p><strong>ntfy URL:</strong> <a href="https://ntfy.sh/${ntfyTopic}">https://ntfy.sh/${ntfyTopic}</a></p>
     <p><strong>Direct Pairing JSON:</strong> <code>${pairingPayload}</code></p>
   </div>
   <p>Status: ${serverInstance ? 'Bridge is RUNNING as HUB' : 'Bridge is STOPPED'}</p>

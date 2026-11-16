@@ -48,6 +48,7 @@ import {
   sendReject
 } from '../../src/api.js';
 import { BridgeWebSocketClient } from '../../src/websocket.js';
+import { showNativeNotification } from '../../src/notifications.js';
 
 function formatResetTime(isoString) {
   if (!isoString) return '';
@@ -1429,6 +1430,12 @@ export default function ChatScreen() {
           return;
         }
         if (event && event.type === 'approval_requested') {
+          showNativeNotification({
+            title: '⚡ Approval Required',
+            body: event.summary || 'Antigravity requires your consent to continue',
+            isUrgent: true,
+            data: { requestId: event.requestId, sessionId: event.sessionId }
+          });
           setPendingApproval({
             requestId: event.requestId,
             kind: event.kind,
@@ -1440,6 +1447,22 @@ export default function ChatScreen() {
           }
           if (!event.sessionId || event.sessionId === currentSessionId) {
             setAgentStatus('awaiting_approval');
+          }
+          return;
+        }
+        if (event && event.type === 'run_finished') {
+          showNativeNotification({
+            title: '✅ Task Finished',
+            body: event.sessionTitle ? `Completed: ${event.sessionTitle}` : 'Antigravity finished running',
+            isUrgent: false,
+            data: { sessionId: event.sessionId }
+          });
+          if (event.sessionId) {
+            setSessionStatuses((prev) => ({ ...prev, [event.sessionId]: 'idle' }));
+          }
+          if (!event.sessionId || event.sessionId === currentSessionId) {
+            setAgentStatus('idle');
+            loadMessages(currentSessionId);
           }
           return;
         }
